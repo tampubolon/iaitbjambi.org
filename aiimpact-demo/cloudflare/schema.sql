@@ -29,3 +29,16 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 
 CREATE INDEX IF NOT EXISTS jobs_code ON jobs (code, created_at DESC);
+
+-- Published pages.
+--
+-- These live in D1 rather than R2 because R2 requires dashboard activation and
+-- a payment method even inside its free tier, and the objects here do not
+-- justify it: 200 pages of roughly 8 KB is ~1.6 MB against D1's 5 GB. Serving
+-- a page costs one indexed row read against a 5M/day allowance, and dropping
+-- R2 removes a binding, a service to enable, and a failure mode.
+CREATE TABLE IF NOT EXISTS pages (
+  slug       TEXT PRIMARY KEY,
+  html       TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

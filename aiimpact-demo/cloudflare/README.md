@@ -14,9 +14,16 @@ Everything fits inside the free tier, verified against current limits:
 |---|---|---|
 | Workers | 100,000 req/day, 10 ms CPU, **no wall-clock limit** | ~15,000 |
 | Queues | 10,000 ops/day | ~3,000 |
-| D1 | 100k writes, 5M reads/day, 5 GB | ~5,000 writes |
-| R2 | 10 GB | ~50 MB |
+| D1 | 100k writes, 5M reads/day, 5 GB | ~5,000 writes, ~2 MB |
 | Universal SSL | apex + **one** subdomain level | `aimpact.` and `{slug}.` are both one level |
+
+**No R2.** Published pages live in the D1 `pages` table. Two reasons: R2 needs
+dashboard activation and a payment method even inside its free tier, and — the
+one that would still apply if it were free — writing the page and marking the
+job done becomes a single `db.batch`. A two-phase write across two services can
+half-fail, leaving a job marked done with no page behind it: a participant shown
+a URL that 404s in front of a customer. R2 becomes the right answer the day
+participants upload photos, which the current design does not do.
 
 Nine AWS services become four, and the NAT Gateway trap — the largest cost risk
 in the AWS variant — cannot exist here.
@@ -28,11 +35,11 @@ in the AWS variant — cannot exist here.
 | `src/model.ts` — shared types | done |
 | `src/render.ts` — page renderer | done, 20 tests |
 | `src/slug.ts` — subdomain labels | done, 16 tests |
-| `src/auth.ts` — session tokens | **not started** |
-| `src/store.ts` — D1 access | **not started** |
-| `src/api.ts` — request handlers | **not started** |
-| `src/consumer.ts` — queue consumer, Anthropic call | **not started** |
-| `src/index.ts` — host routing | **not started** |
+| `src/auth.ts` — session tokens | done, 17 tests |
+| `src/store.ts` — D1 access | done |
+| `src/api.ts` — request handlers | done |
+| `src/index.ts` — host routing, page serving | done |
+| `src/consumer.ts` — Anthropic call, render, publish | **not started** |
 | `web/` — builder UI | done, ported unchanged |
 
 ```bash
@@ -68,14 +75,19 @@ interpolate into it without the `html` tag.
 
 ## Deploy
 
+D1 already exists and the schema is applied:
+
+```
+aimpact  04fcb4af-48b9-4425-a7ad-487569fe01a3  (APAC)
+```
+
+Remaining:
+
 ```bash
-wrangler d1 create aimpact          # put the id in wrangler.toml
-npm run db:apply
-wrangler r2 bucket create aimpact-sites
-wrangler queues create aimpact-generate
-wrangler queues create aimpact-generate-dlq
-wrangler secret put ANTHROPIC_API_KEY
-wrangler secret put SESSION_SECRET
+npx wrangler queues create aimpact-generate
+npx wrangler queues create aimpact-generate-dlq
+npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put SESSION_SECRET   # any 32+ random chars
 npm run deploy
 ```
 

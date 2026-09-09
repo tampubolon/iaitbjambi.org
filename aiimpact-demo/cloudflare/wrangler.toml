@@ -19,11 +19,7 @@ ANTHROPIC_MODEL = "claude-opus-5"
 [[d1_databases]]
 binding       = "DB"
 database_name = "aimpact"
-database_id   = "REPLACE_AFTER_wrangler_d1_create"
-
-[[r2_buckets]]
-binding     = "SITES"
-bucket_name = "aimpact-sites"
+database_id   = "04fcb4af-48b9-4425-a7ad-487569fe01a3"
 
 [[queues.producers]]
 binding = "QUEUE"
