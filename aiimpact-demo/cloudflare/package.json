@@ -1,0 +1,19 @@
+{
+  "name": "aimpact-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run test",
+    "dev": "wrangler dev",
+    "deploy": "npm run check && wrangler deploy",
+    "db:apply": "wrangler d1 execute aimpact --file=./schema.sql --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260908.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.130.0"
+  }
+}
