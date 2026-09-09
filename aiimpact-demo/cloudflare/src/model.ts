@@ -48,7 +48,6 @@ export interface SiteContent {
 
 export interface Env {
   DB: D1Database;
-  SITES: R2Bucket;
   QUEUE: Queue<QueueMessage>;
   ASSETS: Fetcher;
   DOMAIN: string;
