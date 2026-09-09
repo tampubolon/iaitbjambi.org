@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and adjust. Do not commit terraform.tfvars.
+
+region = "ap-southeast-3" # Jakarta
+domain = "iaitbjambi.org"
+
+# Model used by the generation worker.
+anthropic_model = "claude-opus-5"
+
+# Concurrent calls to Anthropic. Raise only after confirming the
+# organisation's rate limit tier can absorb it.
+worker_concurrency = 8
+
+# Bounds worst-case spend. 200 participants x 15 = 3,000 generations.
+max_generations_per_participant = 15
+
+# Leave false on the first apply. Add the CNAMEs from the
+# acm_validation_records output at the DNS provider, then set true.
+wait_for_certificate = false
+
+billing_alarm_usd   = 5
+billing_alarm_email = ""
