@@ -22,30 +22,6 @@ export interface Participant {
   created_at: string;
 }
 
-export interface Product {
-  name: string;
-  price: string;
-  note?: string;
-}
-
-/**
- * What the model returns.
- *
- * Deliberately a set of fields, never markup: the renderer builds the HTML, so
- * no model output can reach the page as executable content. See design §5.1.
- */
-export interface SiteContent {
-  business_name: string;
-  headline: string;
-  tagline: string;
-  about: string;
-  products: Product[];
-  cta_label: string;
-  wa_number: string;
-  address?: string;
-  hours?: string;
-}
-
 export interface Env {
   DB: D1Database;
   QUEUE: Queue<QueueMessage>;

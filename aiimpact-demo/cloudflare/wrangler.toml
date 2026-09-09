@@ -4,7 +4,12 @@ account_id = "f74c9c41498ed3c83c89cb8b671c9e2a"
 
 name = "aimpact"
 main = "src/index.ts"
-compatibility_date = "2026-09-01"
+compatibility_date = "2026-08-22"
+
+# Must sit above every [table]: TOML folds a bare key into whichever table
+# precedes it, and this one silently became part of [[queues.consumers]].
+# Kept alongside the custom routes as a fallback URL if the zone misbehaves.
+workers_dev = true
 
 # The builder UI. Served at aimpact.<domain>; index.ts routes by hostname.
 [assets]
@@ -46,10 +51,6 @@ max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0
 
-# workers.dev stays enabled alongside the custom routes: it is a working URL
-# to fall back on if anything is wrong with the zone, and /p/{slug} there
-# still serves pages without the wildcard.
-workers_dev = true
 
 # Workers routes only attach to proxied hostnames. aimpact and * are proxied;
 # the apex and www are deliberately grey-clouded, so the existing Hostinger

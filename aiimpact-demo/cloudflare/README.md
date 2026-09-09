@@ -54,6 +54,25 @@ npm install
 npm run check      # typecheck + tests
 ```
 
+## The model writes the page
+
+`src/prompt.ts` asks for a complete HTML document; `src/sanitize.ts` strips what
+cannot be allowed to run. Two participants get visibly different sites, which is
+the product — see design §5.1 for why this reversed an earlier decision, and
+what risk it accepts.
+
+`src/render.ts` and its template are gone. What replaced them:
+
+| | |
+|---|---|
+| `sanitize.ts` | HTMLRewriter — drops script/iframe/form/on*/srcdoc/http-equiv, bad schemes, malformed attribute names; normalises every wa.me link |
+| `index.ts` headers | `script-src 'none'` — the backstop if anything survives |
+| `test/sanitize.test.ts` | runs in the Workers runtime; asserts on **element creation**, not substrings |
+
+Tests run under `@cloudflare/vitest-pool-workers` because HTMLRewriter exists
+only in that runtime. Note the pool's API changed in 0.22: `cloudflarePool` on
+the main entry, not `defineWorkersConfig` from `/config` as older guides show.
+
 ## The one thing that got weaker moving off Go
 
 The Go version used `html/template`, whose contextual auto-escaping made design
