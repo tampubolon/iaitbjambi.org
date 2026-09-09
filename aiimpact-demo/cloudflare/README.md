@@ -2,6 +2,10 @@
 
 Implementation of [`../README.md`](../README.md) on Cloudflare's free plan.
 
+**Live:** https://aimpact.iaitbjambi.org — builder UI, with participant pages at
+`{slug}.iaitbjambi.org`. Fallback: `aimpact.tampubolonmartinus8.workers.dev`,
+where `/p/{slug}` stands in for the wildcard subdomains workers.dev lacks.
+
 This is the **active** target. [`../terraform/`](../terraform/) is the AWS variant —
 complete and validated, retained because the design decisions in it still apply,
 but not the deployment path.
@@ -41,7 +45,8 @@ in the AWS variant — cannot exist here.
 | `src/index.ts` — host routing, page serving | done |
 | `src/consumer.ts` — Anthropic call, render, publish | done, 5 tests |
 | `src/prompt.ts` — system prompt | done |
-| Participant code seeding | **not started** — no codes exist, so `redeem` finds nothing |
+| Participant code seeding | done — 220 codes in D1, CSV for handouts |
+| Deployment | done — zone active, routes attached, verified end to end |
 | `web/` — builder UI | done, ported unchanged |
 
 ```bash
@@ -125,3 +130,38 @@ Errors are split by whose fault they are: `ParticipantError` is terminal and
 shows the participant something actionable, because retrying identical input
 would spend another generation against the cap and fail the same way. Anything
 else rethrows so the queue retries it.
+
+## Two things that will bite you again
+
+**`run_worker_first = true` is load-bearing.** Workers Assets serve static files
+*before* the Worker runs for any path matching a file. Without that setting `/`
+returned the builder UI on **every** hostname, so a participant visiting their
+own page saw the code-entry screen instead. It never showed up on workers.dev,
+where there are no participant subdomains and `/p/{slug}` doesn't match an
+asset — only the real domain exposed it. Don't remove it.
+
+**A failed deploy takes the site down rather than rolling back.** When a route
+deploy failed on a missing token permission, wrangler had already removed the
+workers.dev trigger and left the Worker with no trigger at all — its own words:
+"Successful trigger changes were not rolled back." Deploy before a session, not
+during one.
+
+## Token permissions actually required
+
+Assembled the hard way, one denial at a time:
+
+| Scope | Resource | Level |
+|---|---|---|
+| Account | Workers Scripts | Edit |
+| Account | Workers KV Storage | Edit |
+| Account | D1 | Edit |
+| Account | Queues | Edit |
+| Account | Account Settings | Read |
+| Zone | DNS | Edit |
+| Zone | **Workers Routes** | **Edit** |
+| Zone | Zone Settings | Edit |
+
+Zone → Workers Routes is the one that looks redundant next to Workers Scripts
+and is not: deploying the script and attaching it to a hostname are separate
+permissions. Creating the zone itself needs `zone.create`, which none of these
+grant — do that in the dashboard.
