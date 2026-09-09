@@ -1,21 +1,20 @@
 # ---------------------------------------------------------------------------
-# Both functions run OUTSIDE a VPC. This is deliberate and load-bearing:
-# a VPC-attached Lambda loses internet egress, and restoring it needs a NAT
+# Go on provided.al2023, arm64 (Graviton).
+#
+# A static binary removes the dependency-packaging problem entirely: no
+# node_modules, no bundler, no layer. `make build` produces the zips this
+# reads -- run it before plan or apply, or use `make plan` / `make apply`.
+#
+# Both functions run OUTSIDE a VPC. This is deliberate and load-bearing: a
+# VPC-attached Lambda loses internet egress, and restoring it needs a NAT
 # Gateway at ~$32/month whether or not anything runs -- more than this entire
 # project costs. Neither function touches a private resource, so there is
 # nothing a VPC would protect.
 # ---------------------------------------------------------------------------
 
-data "archive_file" "api" {
-  type        = "zip"
-  source_dir  = "${path.module}/src/api"
-  output_path = "${path.module}/.build/api.zip"
-}
-
-data "archive_file" "worker" {
-  type        = "zip"
-  source_dir  = "${path.module}/src/worker"
-  output_path = "${path.module}/.build/worker.zip"
+locals {
+  api_zip    = "${path.module}/.build/api.zip"
+  worker_zip = "${path.module}/.build/worker.zip"
 }
 
 data "aws_iam_policy_document" "lambda_assume" {
@@ -69,10 +68,11 @@ resource "aws_iam_role_policy" "api" {
 resource "aws_lambda_function" "api" {
   function_name    = "${local.name}-api"
   role             = aws_iam_role.api.arn
-  runtime          = "nodejs20.x"
-  handler          = "index.handler"
-  filename         = data.archive_file.api.output_path
-  source_code_hash = data.archive_file.api.output_base64sha256
+  runtime          = "provided.al2023"
+  handler          = "bootstrap"
+  architectures    = ["arm64"]
+  filename         = local.api_zip
+  source_code_hash = filebase64sha256(local.api_zip)
   timeout          = 10
   memory_size      = 256
 
@@ -136,10 +136,11 @@ resource "aws_iam_role_policy" "worker" {
 resource "aws_lambda_function" "worker" {
   function_name    = "${local.name}-worker"
   role             = aws_iam_role.worker.arn
-  runtime          = "nodejs20.x"
-  handler          = "index.handler"
-  filename         = data.archive_file.worker.output_path
-  source_code_hash = data.archive_file.worker.output_base64sha256
+  runtime          = "provided.al2023"
+  handler          = "bootstrap"
+  architectures    = ["arm64"]
+  filename         = local.worker_zip
+  source_code_hash = filebase64sha256(local.worker_zip)
 
   # Generation can take tens of seconds. Billed on actual duration, so a
   # generous ceiling costs nothing and avoids truncating a slow call.
