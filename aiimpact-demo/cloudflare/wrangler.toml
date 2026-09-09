@@ -10,6 +10,11 @@ compatibility_date = "2026-09-01"
 [assets]
 directory = "./web"
 binding = "ASSETS"
+# Without this, static assets are served BEFORE the Worker runs for any path
+# that matches a file -- so "/" returned the builder UI on every hostname and
+# index.ts never got to route by host. A participant's own subdomain showed
+# the code-entry screen instead of their page.
+run_worker_first = true
 
 [vars]
 DOMAIN = "iaitbjambi.org"
@@ -41,23 +46,21 @@ max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0
 
-# Served from workers.dev until the zone moves to Cloudflare. The whole flow
-# is exercisable here -- /p/{slug} stands in for the wildcard subdomains that
-# workers.dev cannot provide -- so the DNS migration stays the last step
-# rather than a prerequisite for testing.
+# workers.dev stays enabled alongside the custom routes: it is a working URL
+# to fall back on if anything is wrong with the zone, and /p/{slug} there
+# still serves pages without the wildcard.
 workers_dev = true
 
-# Uncomment once iaitbjambi.org is on Cloudflare and a proxied wildcard "*"
-# record exists. Workers routes only apply to proxied hostnames, which is why
-# the grey-clouded apex and www stay on Hostinger untouched.
-#
-# [[routes]]
-# pattern   = "aimpact.iaitbjambi.org/*"
-# zone_name = "iaitbjambi.org"
-#
-# [[routes]]
-# pattern   = "*.iaitbjambi.org/*"
-# zone_name = "iaitbjambi.org"
+# Workers routes only attach to proxied hostnames. aimpact and * are proxied;
+# the apex and www are deliberately grey-clouded, so the existing Hostinger
+# site and the mailbox are untouched by these routes.
+[[routes]]
+pattern   = "aimpact.iaitbjambi.org/*"
+zone_name = "iaitbjambi.org"
+
+[[routes]]
+pattern   = "*.iaitbjambi.org/*"
+zone_name = "iaitbjambi.org"
 
 [observability]
 enabled = true
