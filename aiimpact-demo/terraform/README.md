@@ -9,12 +9,27 @@ Infrastructure for the design in [`../README.md`](../README.md). Validated again
 | S3 | Private bucket for published pages, versioned, 30-day non-current expiry |
 | CloudFront | Wildcard distribution + OAC + subdomain→path rewrite function + security headers |
 | ACM | `*.iaitbjambi.org` in us-east-1, DNS validation |
-| Lambda | `api` (10s) and `worker` (120s, reserved concurrency 8) — **both outside any VPC** |
+| Lambda | Go on `provided.al2023`/arm64 — `api` (10s) and `worker` (120s, reserved concurrency 8), **both outside any VPC** |
 | SQS | Generation queue + DLQ, 3 attempts |
 | DynamoDB | `jobs` (TTL 7d) and `participants` (slug GSI), on-demand |
 | API Gateway | HTTP API, 4 routes, access logging |
 | Secrets Manager | Anthropic API key, created empty |
 | CloudWatch | Log groups (14d), billing alarm, DLQ and backlog alarms |
+
+## Build
+
+Terraform consumes prebuilt zips, so compile first. `make plan` and `make apply` do it for you.
+
+```bash
+make build      # go test, cross-compile linux/arm64, package
+```
+
+Go targets arm64 (Graviton): cheaper per GB-second and the native target. A static
+binary means no dependency packaging at all — no layer, no bundler, no node_modules.
+
+`scripts/package.py` sets the executable bit on `bootstrap` explicitly, because
+`provided.al2023` refuses to start without it, and writes a fixed timestamp so an
+unchanged binary produces an identical zip and Terraform sees no spurious diff.
 
 ## Deploy
 
@@ -23,14 +38,14 @@ The certificate needs DNS records added by hand, so the first apply runs in two 
 ```bash
 cp terraform.tfvars.example terraform.tfvars   # then edit
 terraform init
-terraform apply                                # wait_for_certificate = false
+make apply                                     # wait_for_certificate = false
 ```
 
 Take `acm_validation_records` and `dns_records_required` from the output and add them at the DNS provider. **Do not migrate nameservers** — add records only, so existing MX and DKIM entries are untouched.
 
 ```bash
 # once the CNAMEs have propagated
-terraform apply -var wait_for_certificate=true
+make build && terraform apply -var wait_for_certificate=true
 ```
 
 Then load the API key. It is deliberately not managed by Terraform, so it never enters state:
@@ -53,7 +68,23 @@ Expected spend is under $0.30 for a 200-participant session; Lambda's 400,000 GB
 
 ## Not included
 
-- Lambda handler logic — `src/api` and `src/worker` are stubs that deploy and return 501
-- The page template and Anthropic prompt
+- Lambda handler logic — `src/cmd/api` returns 501, `src/cmd/worker` logs and acknowledges
+- The Anthropic call and prompt (`internal/render` is written and tested; the model call is not)
 - Participant code generation
 - Remote state backend — add an S3 backend before more than one person applies
+
+## Layout
+
+```
+src/
+├── cmd/api/          API Gateway handler
+├── cmd/worker/       SQS consumer
+└── internal/
+    ├── model/        shared types, incl. SiteContent (fields, never markup)
+    └── render/       html/template renderer + escaping tests
+```
+
+`internal/render` is the security-critical package. `html/template` escapes by
+context, so no participant or model value can become executable content —
+README section 5.1. `render_test.go` asserts this against script, image,
+iframe and anchor-breakout payloads.

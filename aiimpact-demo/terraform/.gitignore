@@ -1,7 +1,10 @@
+# Terraform
 .terraform/
 .terraform.lock.hcl
-.build/
 terraform.tfvars
 *.tfstate
 *.tfstate.*
 crash.log
+
+# Build artifacts. Produced by `make build`; never committed.
+.build/
