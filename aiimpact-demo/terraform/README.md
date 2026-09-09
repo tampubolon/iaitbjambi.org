@@ -1,4 +1,12 @@
-# Terraform — AIMPACT demo stack
+# Terraform — AIMPACT demo stack (AWS variant)
+
+> **Not the active deployment target.** The project runs on Cloudflare's free
+> plan — see [`../cloudflare/`](../cloudflare/). This stack is complete and
+> `terraform validate` passes; it is kept because the decisions recorded here
+> (no VPC therefore no NAT Gateway, the async submit/poll shape, the queue as
+> rate-limit throttle) still hold, and because it becomes viable again the day
+> an AWS account exists.
+
 
 Infrastructure and Go services for the design in [`../README.md`](../README.md).
 

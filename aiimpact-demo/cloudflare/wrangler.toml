@@ -1,0 +1,57 @@
+name = "aimpact"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# The builder UI. Served at aimpact.<domain>; index.ts routes by hostname.
+[assets]
+directory = "./web"
+binding = "ASSETS"
+
+[vars]
+DOMAIN = "iaitbjambi.org"
+MAX_GENERATIONS = "15"
+ANTHROPIC_MODEL = "claude-opus-5"
+
+# Secrets, set with `wrangler secret put <NAME>`, never in this file:
+#   ANTHROPIC_API_KEY
+#   SESSION_SECRET
+
+[[d1_databases]]
+binding       = "DB"
+database_name = "aimpact"
+database_id   = "REPLACE_AFTER_wrangler_d1_create"
+
+[[r2_buckets]]
+binding     = "SITES"
+bucket_name = "aimpact-sites"
+
+[[queues.producers]]
+binding = "QUEUE"
+queue   = "aimpact-generate"
+
+# max_concurrency is the throttle that keeps a 200-person burst from becoming
+# a wall of 429s from Anthropic. It replaces the Lambda reserved-concurrency
+# setting in the AWS variant, and is the number to tune once the account's
+# rate-limit tier is known.
+[[queues.consumers]]
+queue               = "aimpact-generate"
+max_batch_size      = 1
+max_concurrency     = 8
+max_retries         = 3
+dead_letter_queue   = "aimpact-generate-dlq"
+max_batch_timeout   = 0
+
+# Both hostnames hit the same Worker; index.ts dispatches on host.
+# {slug}.<domain> requires a proxied wildcard DNS record ("*" A 192.0.2.1,
+# orange cloud) -- Workers routes only apply to proxied hostnames, which is
+# also why the grey-clouded apex and www stay on Hostinger untouched.
+[[routes]]
+pattern   = "aimpact.iaitbjambi.org/*"
+zone_name = "iaitbjambi.org"
+
+[[routes]]
+pattern   = "*.iaitbjambi.org/*"
+zone_name = "iaitbjambi.org"
+
+[observability]
+enabled = true
