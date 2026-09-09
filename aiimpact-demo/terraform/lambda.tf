@@ -83,6 +83,7 @@ resource "aws_lambda_function" "api" {
       QUEUE_URL          = aws_sqs_queue.generate.url
       DOMAIN             = var.domain
       MAX_GENERATIONS    = tostring(var.max_generations_per_participant)
+      SESSION_SECRET     = random_password.session_secret.result
     }
   }
 
