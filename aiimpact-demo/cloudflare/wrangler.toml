@@ -1,3 +1,7 @@
+# Stated explicitly so wrangler never needs Account:Read on the credential
+# it is given. Not a secret -- it appears in dashboard URLs.
+account_id = "f74c9c41498ed3c83c89cb8b671c9e2a"
+
 name = "aimpact"
 main = "src/index.ts"
 compatibility_date = "2026-09-01"
@@ -37,17 +41,23 @@ max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0
 
-# Both hostnames hit the same Worker; index.ts dispatches on host.
-# {slug}.<domain> requires a proxied wildcard DNS record ("*" A 192.0.2.1,
-# orange cloud) -- Workers routes only apply to proxied hostnames, which is
-# also why the grey-clouded apex and www stay on Hostinger untouched.
-[[routes]]
-pattern   = "aimpact.iaitbjambi.org/*"
-zone_name = "iaitbjambi.org"
+# Served from workers.dev until the zone moves to Cloudflare. The whole flow
+# is exercisable here -- /p/{slug} stands in for the wildcard subdomains that
+# workers.dev cannot provide -- so the DNS migration stays the last step
+# rather than a prerequisite for testing.
+workers_dev = true
 
-[[routes]]
-pattern   = "*.iaitbjambi.org/*"
-zone_name = "iaitbjambi.org"
+# Uncomment once iaitbjambi.org is on Cloudflare and a proxied wildcard "*"
+# record exists. Workers routes only apply to proxied hostnames, which is why
+# the grey-clouded apex and www stay on Hostinger untouched.
+#
+# [[routes]]
+# pattern   = "aimpact.iaitbjambi.org/*"
+# zone_name = "iaitbjambi.org"
+#
+# [[routes]]
+# pattern   = "*.iaitbjambi.org/*"
+# zone_name = "iaitbjambi.org"
 
 [observability]
 enabled = true
