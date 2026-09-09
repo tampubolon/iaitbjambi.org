@@ -1,9 +1,10 @@
 /**
  * Worker entry point. One Worker serves both hostnames; this dispatches.
  *
- *   aimpact.<domain>/        builder UI  (static assets)
- *   aimpact.<domain>/api/*   handlers
- *   {slug}.<domain>/         a participant's published page, read from D1
+ *   aimpact.<domain>/          builder UI (static assets)
+ *   aimpact.<domain>/api/*     handlers
+ *   aimpact.<domain>/p/{slug}  a published page, by path
+ *   {slug}.<domain>/           the same page, by subdomain
  *
  * Cloudflare routes only apply to proxied hostnames, so the grey-clouded apex
  * and www continue to resolve to the existing Hostinger site untouched.
@@ -22,6 +23,26 @@ function notFound(): Response {
   });
 }
 
+async function servePage(slug: string, env: Env): Promise<Response> {
+  const html = await new Store(env.DB).page(slug);
+  if (html === null) return notFound();
+
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      // Short, because a participant republishes and immediately shows the
+      // result to someone. Long enough to absorb a burst of shares.
+      "cache-control": "public, max-age=60, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "strict-origin-when-cross-origin",
+      // Defence in depth. The renderer emits no script, so this should never
+      // block anything -- if it does, render.ts has a bug.
+      "content-security-policy":
+        "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+    },
+  });
+}
+
 export default {
   async fetch(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
@@ -31,30 +52,20 @@ export default {
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
         return handle(req, env);
       }
+      // Path fallback for published pages. workers.dev has no wildcard
+      // subdomains, so without this the flow can only be exercised after the
+      // DNS migration -- making a risky, mail-affecting change a prerequisite
+      // for testing rather than the last step.
+      const preview = /^\/p\/([a-z0-9-]{1,63})\/?$/.exec(url.pathname);
+      if (preview) return servePage(preview[1]!, env);
+
       return env.ASSETS.fetch(req);
     }
 
-    // Reserved labels never map to a participant page. Duplicated in
-    // slug.ts, which refuses to assign them (design §8.7).
+    // Reserved labels never map to a participant page. Duplicated in slug.ts,
+    // which refuses to assign them (design §8.7).
     if (RESERVED.has(label)) return notFound();
-
-    const html = await new Store(env.DB).page(label);
-    if (html === null) return notFound();
-
-    return new Response(html, {
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        // Short, because a participant republishes and immediately shows the
-        // result to someone. Long enough to absorb a burst of shares.
-        "cache-control": "public, max-age=60, must-revalidate",
-        "x-content-type-options": "nosniff",
-        "referrer-policy": "strict-origin-when-cross-origin",
-        // Defence in depth. The renderer emits no script, so this should never
-        // block anything -- if it does, render.ts has a bug.
-        "content-security-policy":
-          "default-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
-      },
-    });
+    return servePage(label, env);
   },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {

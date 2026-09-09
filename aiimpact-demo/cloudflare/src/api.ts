@@ -12,6 +12,7 @@
  * become 200 simultaneous requests and a wall of 429s.
  */
 import { bearer, sign, verify } from "./auth";
+import { normalise, valid } from "./code";
 import type { Env } from "./model";
 import { CapReached, NotFound, Store } from "./store";
 
@@ -62,8 +63,11 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   // --- POST /redeem --------------------------------------------------------
   if (req.method === "POST" && path === "/redeem") {
     const body = await req.json<{ code?: string }>().catch(() => null);
-    const code = body?.code?.trim().toUpperCase();
-    if (!code) return fault(400, "Kode tidak terbaca. Coba ketik ulang.");
+    // Crockford normalisation: someone reading O for 0 or I for 1 off a
+    // printed handout still gets in, rather than being told their own code
+    // is wrong.
+    const code = normalise(body?.code ?? "");
+    if (!valid(code)) return fault(400, "Kode tidak terbaca. Periksa lembar peserta Anda.");
 
     try {
       const p = await store.redeem(code);
