@@ -1,16 +1,36 @@
-// Viewer-request function: maps the subdomain onto an S3 key prefix, so
-// nasigorengbudi.iaitbjambi.org serves sites/nasigorengbudi/index.html.
+// Viewer-request function. Two jobs, decided by hostname:
+//
+//   aimpact.<domain>          -> /app/...    the builder UI
+//   <slug>.<domain>           -> /sites/<slug>/...   a participant's page
+//
+// Cache-behaviour selection happens against the ORIGINAL uri, before this
+// runs, so rewriting here does not move the request to another behaviour.
+// /api/* is matched as its own behaviour and never reaches this function.
 //
 // CloudFront Functions have no network access and a sub-millisecond budget.
-// Keep this to string handling only.
+// String handling only.
+var APP_HOST = 'aimpact';
+var RESERVED = ['www', 'api', 'mail', 'ftp', 'admin', 'cdn', 'smtp', 'imap'];
+
 function handler(event) {
   var request = event.request;
   var host = request.headers.host.value.toLowerCase();
-  var slug = host.split('.')[0];
+  var label = host.split('.')[0];
+  var uri = request.uri;
 
-  // Reserved names never map to a participant page.
-  var reserved = ['www', 'api', 'mail', 'ftp', 'admin', 'cdn'];
-  if (reserved.indexOf(slug) !== -1) {
+  // Directory requests and extensionless paths get index.html.
+  if (uri.endsWith('/')) {
+    uri += 'index.html';
+  } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
+    uri += '/index.html';
+  }
+
+  if (label === APP_HOST) {
+    request.uri = '/app' + uri;
+    return request;
+  }
+
+  if (RESERVED.indexOf(label) !== -1) {
     return {
       statusCode: 404,
       statusDescription: 'Not Found',
@@ -19,13 +39,6 @@ function handler(event) {
     };
   }
 
-  var uri = request.uri;
-  if (uri.endsWith('/')) {
-    uri += 'index.html';
-  } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
-    uri += '/index.html';
-  }
-
-  request.uri = '/sites/' + slug + uri;
+  request.uri = '/sites/' + label + uri;
   return request;
 }

@@ -7,7 +7,7 @@ Infrastructure for the design in [`../README.md`](../README.md). Validated again
 | | |
 |---|---|
 | S3 | Private bucket for published pages, versioned, 30-day non-current expiry |
-| CloudFront | Wildcard distribution + OAC + subdomain→path rewrite function + security headers |
+| CloudFront | Wildcard distribution + OAC + hostname routing (`aimpact.`→`app/`, else `sites/{slug}/`) + `/api/*` behaviour to API Gateway + security headers |
 | ACM | `*.iaitbjambi.org` in us-east-1, DNS validation |
 | Lambda | Go on `provided.al2023`/arm64 — `api` (10s) and `worker` (120s, reserved concurrency 8), **both outside any VPC** |
 | SQS | Generation queue + DLQ, 3 attempts |
@@ -82,7 +82,14 @@ src/
 └── internal/
     ├── model/        shared types, incl. SiteContent (fields, never markup)
     └── render/       html/template renderer + escaping tests
+web/
+├── index.html        builder UI, served at aimpact.<domain>
+└── app.js            separate file so CSP stays at script-src 'self'
 ```
+
+Publish the UI with `make app` (S3 copy + CloudFront invalidation). It has no
+build step: on venue wifi with 200 phones, the cheapest bundle is the one that
+does not exist.
 
 `internal/render` is the security-critical package. `html/template` escapes by
 context, so no participant or model value can become executable content —

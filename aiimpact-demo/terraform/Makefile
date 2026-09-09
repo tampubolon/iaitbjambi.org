@@ -42,3 +42,15 @@ apply: build
 
 clean:
 	rm -rf $(BUILD)
+
+# Publish the builder UI. Served at aimpact.<domain> via the rewrite function.
+.PHONY: app
+app:
+	aws s3 cp web/index.html "s3://$$(terraform output -raw sites_bucket)/app/index.html" \
+	  --content-type "text/html; charset=utf-8" --cache-control "public,max-age=0,must-revalidate"
+	aws s3 cp web/app.js     "s3://$$(terraform output -raw sites_bucket)/app/app.js" \
+	  --content-type "application/javascript; charset=utf-8" --cache-control "public,max-age=0,must-revalidate"
+	aws cloudfront create-invalidation \
+	  --distribution-id "$$(terraform output -raw cloudfront_distribution_id)" \
+	  --paths "/app/*" >/dev/null
+	@echo "published: https://aimpact.$$(terraform output -raw domain_name)"
