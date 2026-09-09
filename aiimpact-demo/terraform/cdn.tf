@@ -72,7 +72,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
   custom_headers_config {
     items {
       header   = "Content-Security-Policy"
-      value    = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+      value    = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
       override = true
     }
   }
@@ -93,6 +93,21 @@ resource "aws_cloudfront_distribution" "sites" {
     domain_name              = aws_s3_bucket.sites.bucket_regional_domain_name
     origin_id                = "s3-sites"
     origin_access_control_id = aws_cloudfront_origin_access_control.sites.id
+  }
+
+  # Fronting the API on the same hostname removes CORS entirely: no preflight
+  # round trip on a slow connection, and no class of bug that only appears on
+  # someone else's phone.
+  origin {
+    domain_name = replace(aws_apigatewayv2_api.main.api_endpoint, "https://", "")
+    origin_id   = "apigw"
+
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
   }
 
   default_cache_behavior {
@@ -126,6 +141,20 @@ resource "aws_cloudfront_distribution" "sites" {
     response_code         = 404
     response_page_path    = "/error.html"
     error_caching_min_ttl = 10
+  }
+
+  ordered_cache_behavior {
+    path_pattern           = "/api/*"
+    target_origin_id       = "apigw"
+    viewer_protocol_policy = "https-only"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    # Managed-CachingDisabled / Managed-AllViewerExceptHostHeader.
+    # The host header must not be forwarded or API Gateway rejects the request.
+    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
+    origin_request_policy_id = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
   }
 
   restrictions {

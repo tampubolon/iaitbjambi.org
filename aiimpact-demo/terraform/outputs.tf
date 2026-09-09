@@ -54,3 +54,18 @@ output "cost_guardrails" {
     per_participant_cap = var.max_generations_per_participant
   }
 }
+
+output "cloudfront_distribution_id" {
+  description = "Used by `make app` to invalidate the builder UI after publishing."
+  value       = aws_cloudfront_distribution.sites.id
+}
+
+output "domain_name" {
+  description = "Apex domain, for constructing URLs."
+  value       = var.domain
+}
+
+output "builder_url" {
+  description = "Where participants go to create their page."
+  value       = "https://aimpact.${var.domain}"
+}

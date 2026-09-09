@@ -7,12 +7,8 @@ resource "aws_apigatewayv2_api" "main" {
   name          = "${local.name}-api"
   protocol_type = "HTTP"
 
-  cors_configuration {
-    allow_origins = ["https://${var.domain}", "https://www.${var.domain}"]
-    allow_methods = ["GET", "POST", "OPTIONS"]
-    allow_headers = ["content-type", "authorization"]
-    max_age       = 3600
-  }
+  # No CORS block: the UI is served from aimpact.<domain> and reaches the API
+  # through /api/* on the same distribution, so requests are same-origin.
 }
 
 resource "aws_apigatewayv2_integration" "api" {

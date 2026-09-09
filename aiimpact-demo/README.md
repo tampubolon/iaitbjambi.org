@@ -16,9 +16,18 @@ Existing consumer tools solve this adequately — Canva's free tier publishes an
 
 **Goal:** a participant with only a phone types a description of their business, and within seconds has a live landing page at a memorable URL with a working WhatsApp order button.
 
+**URLs**
+
+| | |
+|---|---|
+| `aimpact.iaitbjambi.org` | Builder UI — where participants enter a code and type their prompt |
+| `aimpact.iaitbjambi.org/api/*` | API, same-origin via CloudFront |
+| `{slug}.iaitbjambi.org` | A participant's published page |
+
 ## 2. Non-goals
 
 - Not a website *editor*. No canvas, no drag-and-drop, no layout control.
+- Not a chat. One prompt in, one page out — no conversational refinement.
 - Not multi-page. One page per business.
 - Not a CMS. Content changes by re-submitting the form, not by editing HTML.
 - Not e-commerce. The call to action is a WhatsApp link, not a checkout.
@@ -39,8 +48,14 @@ Existing consumer tools solve this adequately — Canva's free tier publishes an
 
 ## 4. Architecture
 
+The builder UI is a single static page plus one script, served from the same
+CloudFront distribution as the published pages. The viewer-request function
+routes by hostname: `aimpact.` goes to `app/`, anything else to `sites/{slug}/`.
+`/api/*` is its own cache behaviour pointing at API Gateway, which makes every
+call from the UI same-origin — no CORS preflight on a slow connection.
+
 ```
-  phone browser
+  phone browser  ── aimpact.iaitbjambi.org ──> S3 app/  (UI, static)
        │  one-time code
        ▼
   ┌─────────────┐   POST /generate        ┌──────────┐
@@ -113,7 +128,17 @@ Attaching it to a VPC would break internet access and the obvious fix — a NAT 
 
 The entire value of the artifact is that the owner shares the link on WhatsApp. A numbered subdomain is meaningless to a customer and reads like spam. Slugs are derived from the business name, normalised, and de-duplicated with a numeric suffix.
 
-### 5.6 One-time codes, not usernames and passwords
+### 5.6 A prompt box, seeded rather than blank
+
+Input is free text — the participant describes their business in their own words, and the model extracts the fields.
+
+A form would complete faster and more reliably; that was the alternative considered. The prompt box was chosen because the session's premise is teaching people to *use AI*, and a form hides the thing being taught.
+
+The cost of that choice is blank-page paralysis, which is the usual failure mode. It is mitigated rather than accepted: the box opens **pre-filled with a complete, editable example** for a Jambi warung, and five tappable chips append the fields people most often omit — opening hours, address, WhatsApp number, delivery, what makes the food good. A participant who overwrites the example gets a good result; one who edits it gets a good result; only one who deletes it and stares at nothing does not, and that state is never the default.
+
+Server-side, the model still returns **structured fields, not markup** (§5.1). Free text goes in; JSON comes out.
+
+### 5.7 One-time codes, not usernames and passwords
 
 Distributing 200 credentials means password resets during the session. Codes are pre-generated, printed on the participant handout, and redeemed once to establish a session. No password, no recovery flow, no support queue.
 
@@ -222,6 +247,7 @@ DNS and certificate work happens in phase 0 regardless — propagation and valid
 2. Do pages persist indefinitely, or expire if unclaimed? Assumed indefinite.
 3. Who operates this after November — JDM, or IA-ITB?
 4. Bahasa Indonesia only, or Melayu Jambi variants in generated copy?
+5. Does a participant get a preview before publishing, or is publish immediate? Assumed immediate — a preview step is another screen to explain.
 
 ## 15. Assumptions
 
