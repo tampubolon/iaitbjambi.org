@@ -103,15 +103,40 @@ DNS stays with the current provider. A wildcard `CNAME` points at the CloudFront
 
 ## 5. Key design decisions
 
-### 5.1 The model returns JSON, never HTML
+### 5.1 The model writes the page
 
-The LLM emits structured fields — headline, tagline, three products with prices, CTA text — via the Messages API's structured output (`output_config.format`). Our own code renders the HTML from a fixed template.
+**Reversed on 2026-09-10.** This section previously said the model returns
+structured fields and a fixed template renders them. It now returns a complete
+HTML document — layout, palette, typography, all of it.
 
-This is the most important decision in the document, for three reasons:
+The reason for the original decision still stands: a renderer that *cannot*
+emit script is safer than one that filters. What changed is the weight on the
+other side. With one template, 200 participants got 200 identical pages, and
+the moment the product exists for — someone seeing AI build something that
+looks like *their* shop — never happened. A warung and a bengkel looked the
+same. That is not a cosmetic complaint; it is the feature failing.
 
-1. **Security.** Pages are served from `*.iaitbjambi.org`, the organisation's real domain. If the model emitted markup, a participant could prompt it into injected script or a phishing-shaped page carrying IA-ITB's identity and the Pemerintah Kota Jambi association. A renderer that never emits `<script>` closes this by construction rather than by filtering.
-2. **Recoverability.** A layman cannot debug broken AI-generated HTML. A template always produces a correct-looking page.
-3. **Cost and latency.** ~700 output tokens of JSON instead of ~3,000 of markup.
+So the guarantee is rebuilt from two layers instead of one:
+
+1. **`src/sanitize.ts`** — HTMLRewriter, Cloudflare's real streaming parser,
+   drops `script`, `iframe`, `form`, `input`, every `on*` handler, `srcdoc`,
+   `http-equiv`, malformed attribute names, and any URL whose scheme is not on
+   an allowlist. A regex sanitiser would lose here; a model emitting malformed
+   markup is routine, not exceptional.
+2. **The CSP in `src/index.ts`** — `script-src 'none'`. Even if something
+   survived the parser, the browser refuses to execute it.
+
+Tested in the Workers runtime, because HTMLRewriter exists nowhere else, and
+asserting on **element creation rather than substrings**: `<scr<script>ipt>`
+passes through as inert text, so its characters survive while no script element
+is ever produced. The substring assertion would have been both weaker and
+misleading.
+
+**The residual risk is appearance, not execution.** A page can still be made to
+*look* like something it is not — a fake sign-in, or something offensive —
+under the organisation's domain. With 200 known participants holding printed
+codes that is manageable. It would not be if this were open to the public, and
+that constraint is now load-bearing rather than incidental.
 
 ### 5.2 Asynchronous submission
 
@@ -182,8 +207,8 @@ Each invariant names the thing that enforces it, so a later change can be checke
 
 1. A participant may never exceed **15 generations**.
    → `store.CountGeneration` — a single conditional `ADD`, never read-then-write. Under the burst in §3 a double tap would otherwise pass a check-then-act test twice, and this cap is what bounds worst-case spend.
-2. Rendered HTML contains no `<script>` and no attribute-borne JavaScript.
-   → `internal/render` uses `html/template`, which escapes by context. The model is never asked for markup (§5.1), so this holds by construction rather than by filtering. `render_test.go` asserts it against script, image, iframe and anchor-breakout payloads.
+2. A published page produces no executable script.
+   → `src/sanitize.ts` (HTMLRewriter) plus `script-src 'none'` in the response headers. Asserted by re-parsing sanitiser output and counting `script` elements, not by substring matching — see §5.1.
 3. `slug` is unique and immutable once assigned.
    → `store.ClaimSlug` conditions on `attribute_not_exists(slug)`. Immutability is not cosmetic: a slug is in someone's WhatsApp history the moment it is published, so it must never move to a different business.
 4. A published page is durable. Republishing overwrites; nothing expires.
