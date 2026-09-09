@@ -2,9 +2,20 @@
 
 Technical design for the hands-on landing-page session at **Seminar AI for UMKM 2026 (AIMPACT)**, and for its continuation under Jambi Digital Movement.
 
-**Status:** design — not yet built
 **Owner:** IA-ITB Pengda Jambi
 **Target scale:** 200 concurrent participants, 5-hour session
+
+**Status:** partially built. Infrastructure, API and renderer are done; the model call is not, so nothing generates a page yet.
+
+| | |
+|---|---|
+| Infrastructure (`terraform/`) | done — `terraform validate` passes |
+| Builder UI (`terraform/web/`) | done |
+| `internal/render` — page renderer | done, tested |
+| `internal/slug`, `internal/auth`, `internal/store` | done, tested |
+| `cmd/api` — redeem / generate / status / me | done |
+| `cmd/worker` — Anthropic call, render, publish | **not started** |
+| Participant code seeding | **not started** |
 
 ---
 
@@ -140,15 +151,21 @@ Server-side, the model still returns **structured fields, not markup** (§5.1). 
 
 ### 5.7 One-time codes, not usernames and passwords
 
-Distributing 200 credentials means password resets during the session. Codes are pre-generated, printed on the participant handout, and redeemed once to establish a session. No password, no recovery flow, no support queue.
+Distributing 200 credentials means password resets during the session. Codes are pre-generated, printed on the participant handout, and redeemed to establish a session. No password, no recovery flow, no support queue.
+
+**Redemption is idempotent, not single-use.** An earlier draft of this document said a code may be redeemed once. Enforced literally, a participant who reloads the page, loses signal mid-request, or reopens the link is locked out of their own code with no recovery except finding a panitia member during a live session — a support burden created to prevent something that isn't a real threat at this scale. Redeeming again returns the same participant and a fresh token. **Single use is enforced socially: one code per printed sheet.**
+
+The session token is an HMAC over `code:expiry` with a 12-hour life (`internal/auth`) — one claim, one event, no JWT dependency and no algorithm-confusion surface. Signature comparison is constant time.
 
 ## 6. Data model
 
-**DynamoDB `jobs`** — `job_id` (PK), `code`, `slug`, `status` (`queued|running|done|error`), `error_message`, `created_at`, `ttl` (7 days).
+**DynamoDB `jobs`** — `job_id` (PK), `code`, `slug`, `status` (`queued|running|done|error`), `url`, `message`, `created_at`, `ttl` (7 days).
 
-**DynamoDB `participants`** — `code` (PK), `slug`, `business_name`, `wa_number`, `generation_count`, `created_at`.
+**DynamoDB `participants`** — `code` (PK), `slug`, `business_name`, `wa_number`, `generation_count`, `redeemed_at`, `created_at`. Secondary index `slug-index` on `slug`, keys only.
 
-**S3** — `sites/{slug}/index.html`, `sites/{slug}/assets/*`.
+`slug-index` is **eventually consistent**, so a lookup can report a name free when it has just been taken. The index keeps the common path cheap; the conditional write on `ClaimSlug` is what actually enforces uniqueness (§8.3).
+
+**S3** — `sites/{slug}/index.html`, `app/index.html`, `app/app.js`.
 
 ## 7. API surface
 
@@ -161,12 +178,22 @@ Distributing 200 credentials means password resets during the session. Codes are
 
 ## 8. Invariants
 
-1. A participant may never exceed **15 generations**, enforced server-side on `participants.generation_count`.
-2. Rendered HTML contains no `<script>` and no attribute-borne JavaScript. Enforced by the renderer, not by sanitising model output.
+Each invariant names the thing that enforces it, so a later change can be checked against the mechanism rather than the intent.
+
+1. A participant may never exceed **15 generations**.
+   → `store.CountGeneration` — a single conditional `ADD`, never read-then-write. Under the burst in §3 a double tap would otherwise pass a check-then-act test twice, and this cap is what bounds worst-case spend.
+2. Rendered HTML contains no `<script>` and no attribute-borne JavaScript.
+   → `internal/render` uses `html/template`, which escapes by context. The model is never asked for markup (§5.1), so this holds by construction rather than by filtering. `render_test.go` asserts it against script, image, iframe and anchor-breakout payloads.
 3. `slug` is unique and immutable once assigned.
+   → `store.ClaimSlug` conditions on `attribute_not_exists(slug)`. Immutability is not cosmetic: a slug is in someone's WhatsApp history the moment it is published, so it must never move to a different business.
 4. A published page is durable. Republishing overwrites; nothing expires.
+   → S3 versioning on, non-current versions expire after 30 days.
 5. No AWS resource in this project bills while idle.
+   → No VPC, therefore no NAT Gateway (§5.4); no EC2; no provisioned capacity.
 6. The WhatsApp link uses country-code format (`628…`), never local format (`08…`).
+   → `render.WhatsAppNumber`, tested. A local-format number produces a button that opens nothing, silently — the most common failure in this workflow.
+7. A reserved label never becomes a participant slug.
+   → Two lists, deliberately duplicated: `internal/slug` (rejects at assignment) and `cloudfront/rewrite.js` (404s at the edge). Keep them in sync.
 
 ## 9. Security
 
@@ -243,11 +270,18 @@ DNS and certificate work happens in phase 0 regardless — propagation and valid
 
 **Open questions**
 
-1. What is our current Anthropic API tier and rate limit? *(blocks §11 — resolve first)*
+1. What is our current Anthropic API tier and rate limit? *(blocks §11 — still unresolved, and the only question that gates the load test)*
 2. Do pages persist indefinitely, or expire if unclaimed? Assumed indefinite.
 3. Who operates this after November — JDM, or IA-ITB?
 4. Bahasa Indonesia only, or Melayu Jambi variants in generated copy?
 5. Does a participant get a preview before publishing, or is publish immediate? Assumed immediate — a preview step is another screen to explain.
+
+**Resolved since first draft**
+
+- Input shape — a prompt box, seeded rather than blank (§5.6).
+- Builder URL — `aimpact.iaitbjambi.org`, same distribution, hostname-routed (§1, §4).
+- Implementation language — Go. A static binary removes dependency packaging, and `html/template` turns §8.2 into a property of the standard library.
+- Code redemption — idempotent, not single-use (§5.7).
 
 ## 15. Assumptions
 

@@ -1,6 +1,11 @@
 # Terraform — AIMPACT demo stack
 
-Infrastructure for the design in [`../README.md`](../README.md). Validated against Terraform 1.12, AWS provider ~> 5.60.
+Infrastructure and Go services for the design in [`../README.md`](../README.md).
+
+Validated against Terraform 1.12 and AWS provider ~> 5.60. **Go 1.24 or newer is
+required** — the AWS SDK v2 will not resolve below it. If your `go` binary is
+older it will fetch a newer toolchain automatically; do not set
+`GOTOOLCHAIN=local` on a build host or the SDK fails to resolve.
 
 ## What it builds
 
@@ -14,6 +19,7 @@ Infrastructure for the design in [`../README.md`](../README.md). Validated again
 | DynamoDB | `jobs` (TTL 7d) and `participants` (slug GSI), on-demand |
 | API Gateway | HTTP API, 4 routes, access logging |
 | Secrets Manager | Anthropic API key, created empty |
+| random_password | Session-token signing secret, injected into the API function |
 | CloudWatch | Log groups (14d), billing alarm, DLQ and backlog alarms |
 
 ## Build
@@ -66,32 +72,63 @@ Verify after any change to this stack:
 
 Expected spend is under $0.30 for a 200-participant session; Lambda's 400,000 GB-s and CloudFront's 1 TB are always-free tiers unaffected by account age. The billing alarm at $5 exists to catch a mistake, not to track normal usage.
 
-## Not included
+## Status
 
-- Lambda handler logic — `src/cmd/api` returns 501, `src/cmd/worker` logs and acknowledges
-- The Anthropic call and prompt (`internal/render` is written and tested; the model call is not)
-- Participant code generation
-- Remote state backend — add an S3 backend before more than one person applies
+Done and tested:
+
+- All infrastructure
+- The builder UI (`web/`)
+- `cmd/api` — `redeem`, `generate`, `status`, `me`, working against DynamoDB and SQS
+- `internal/render`, `internal/slug`, `internal/auth`, `internal/store`
+
+Not yet built:
+
+- **`cmd/worker`** — logs the message and acknowledges it. The Anthropic call,
+  the prompt, the slug claim and the S3 publish are all missing, so a job
+  queues and then sits at `queued` forever. This is the last piece before the
+  system runs end to end.
+- **Participant code seeding** — no codes exist, so `redeem` finds nothing.
+- **Remote state backend** — add an S3 backend before more than one person applies.
 
 ## Layout
 
 ```
 src/
-├── cmd/api/          API Gateway handler
-├── cmd/worker/       SQS consumer
+├── cmd/api/          API Gateway handler — 4 routes
+├── cmd/worker/       SQS consumer — stub
 └── internal/
+    ├── auth/         HMAC session tokens, 12h
     ├── model/        shared types, incl. SiteContent (fields, never markup)
-    └── render/       html/template renderer + escaping tests
+    ├── render/       html/template renderer + escaping tests
+    ├── slug/         business name -> subdomain label, dedup, reserved list
+    └── store/        DynamoDB access; conditional writes for the cap and slug
 web/
 ├── index.html        builder UI, served at aimpact.<domain>
 └── app.js            separate file so CSP stays at script-src 'self'
 ```
 
+`make test` runs the Go tests; `make build` runs them before packaging, so a
+broken test cannot be deployed.
+
 Publish the UI with `make app` (S3 copy + CloudFront invalidation). It has no
 build step: on venue wifi with 200 phones, the cheapest bundle is the one that
 does not exist.
 
-`internal/render` is the security-critical package. `html/template` escapes by
-context, so no participant or model value can become executable content —
-README section 5.1. `render_test.go` asserts this against script, image,
-iframe and anchor-breakout payloads.
+## The two packages worth reading first
+
+`internal/render` is security-critical. `html/template` escapes by context, so
+no participant or model value can become executable content (design §5.1/§8.2).
+`render_test.go` asserts this against script, image, iframe and anchor-breakout
+payloads, and covers the `08…` → `62…` WhatsApp conversion that otherwise
+produces a button that silently opens nothing.
+
+`internal/store` holds the two operations that are contended under a
+200-person burst, both written as conditional writes rather than
+read-then-write:
+
+- `CountGeneration` — atomic `ADD` gated on the cap. This is what bounds
+  worst-case spend, so a check-then-act version would be wrong under exactly
+  the load the system is built for.
+- `ClaimSlug` — gated on `attribute_not_exists(slug)`. The `slug-index` GSI is
+  eventually consistent and can report a stale free; this condition is the
+  actual guarantee.
