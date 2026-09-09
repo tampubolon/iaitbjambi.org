@@ -39,7 +39,9 @@ in the AWS variant — cannot exist here.
 | `src/store.ts` — D1 access | done |
 | `src/api.ts` — request handlers | done |
 | `src/index.ts` — host routing, page serving | done |
-| `src/consumer.ts` — Anthropic call, render, publish | **not started** |
+| `src/consumer.ts` — Anthropic call, render, publish | done, 5 tests |
+| `src/prompt.ts` — system prompt | done |
+| Participant code seeding | **not started** — no codes exist, so `redeem` finds nothing |
 | `web/` — builder UI | done, ported unchanged |
 
 ```bash
@@ -95,3 +97,31 @@ DNS: the zone must be on Cloudflare (free plan requires full nameserver
 delegation; CNAME setup is Business plan). Add a **proxied** wildcard `*` record
 — Workers routes only apply to proxied hostnames. Leave the apex and `www`
 **grey-clouded** so the existing Hostinger site and mailbox are untouched.
+
+## Model call
+
+`claude-opus-5` with structured output (`messages.parse` + `zodOutputFormat`), so
+the model returns the fields of `SiteContent` and never markup — design §5.1.
+
+Three choices worth knowing about:
+
+**`effort: "low"`.** Not a cost decision. A participant is watching a spinner,
+and this is short extraction-and-copy work rather than reasoning — the workload
+shape where higher effort buys little. It is the first dial to turn if output
+quality disappoints, before changing model.
+
+**The system prompt is byte-identical for every participant**, so it caches
+after the first call and reads back at roughly a tenth of the input price.
+Never interpolate per-request text into `src/prompt.ts`: one changed byte
+invalidates the cache for everyone. Verify with `usage.cache_read_input_tokens`.
+
+**Server-side refusal fallbacks are deliberately not wired.** A safety decline
+arrives as HTTP 200 with `stop_reason: "refusal"`, and the consumer turns it
+into a message asking the participant to rewrite. Rerouting to a second model
+to satisfy a request the first declined is the wrong behaviour for a public
+workshop run under an organisation's name.
+
+Errors are split by whose fault they are: `ParticipantError` is terminal and
+shows the participant something actionable, because retrying identical input
+would spend another generation against the cap and fail the same way. Anything
+else rethrows so the queue retries it.
