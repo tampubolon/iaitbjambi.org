@@ -267,3 +267,30 @@ Two fixes in `web/app.js`:
 
 If this is ever run for materially more than 200 people, **Workers Paid is $5/month**
 and removes the ceiling. For one session the backoff is enough.
+
+## Run `npm run check` before every deploy
+
+It runs `check-config.mjs` first, and that script exists because **TOML folds a
+bare key into whichever `[table]` precedes it** — which has silently broken this
+config twice:
+
+1. `workers_dev = true` sat below `[[queues.consumers]]` and became part of it,
+   so it was never a top-level setting.
+2. A regex edit removed the `[[queues.consumers]]` header for the main queue.
+   Its settings, including `max_concurrency`, folded into
+   `[[queues.producers]]`. The consumer stayed attached from an earlier deploy,
+   so nothing failed — the queue simply kept running at the *previous*
+   concurrency (12, tuned for Opus) while the file said 9. Under load that is
+   109% of the rate limit.
+
+Neither showed up in the tests, the typecheck, or a successful deploy. Both
+would have been caught here. The check asserts top-level keys are top level,
+that no producer carries consumer keys, that both queues have consumers, and
+that `max_concurrency` sits inside the measured safe range.
+
+**Verify live settings after deploying**, since config and reality can diverge:
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/queues" | jq '.result[].consumers'
+```

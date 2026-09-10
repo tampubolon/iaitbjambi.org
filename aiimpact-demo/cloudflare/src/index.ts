@@ -69,6 +69,16 @@ export default {
   },
 
   async queue(batch: MessageBatch<QueueMessage>, env: Env): Promise<void> {
+    // One handler serves both queues; batch.queue says which.
+    if (batch.queue.endsWith("-dlq")) {
+      const { buryDeadLetter } = await import("./consumer");
+      for (const msg of batch.messages) {
+        await buryDeadLetter(msg.body, env);
+        msg.ack(); // never retry a dead letter — that is how it got here
+      }
+      return;
+    }
+
     const { consume } = await import("./consumer");
     for (const msg of batch.messages) {
       try {

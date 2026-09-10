@@ -174,3 +174,30 @@ export async function consume(msg: QueueMessage, env: Env): Promise<void> {
     throw err;
   }
 }
+
+/**
+ * Last stop for a job that failed every retry.
+ *
+ * Without this the message lands in the dead-letter queue and stops there:
+ * the job row stays "running" forever, the participant polls for ten minutes
+ * before being told to find a panitia member, and nothing records why. Here
+ * the row is marked failed within seconds and the failure is logged with the
+ * code, so a count of real failures exists during the session rather than
+ * afterwards.
+ *
+ * Deliberately does not consume a generation from the cap: the participant
+ * did nothing wrong, so retrying should not cost them one of their fifteen.
+ */
+export async function buryDeadLetter(msg: QueueMessage, env: Env): Promise<void> {
+  console.error(
+    JSON.stringify({ at: "dead_letter", job_id: msg.job_id, code: msg.code }),
+  );
+  try {
+    await new Store(env.DB).setJobStatus(msg.job_id, "error", {
+      message: "Gagal membuat halaman setelah beberapa percobaan. Silakan coba lagi.",
+    });
+  } catch (err) {
+    // Nothing left to fall back on; at least make it visible in the logs.
+    console.error("dead_letter: could not mark job failed", msg.job_id, err);
+  }
+}
