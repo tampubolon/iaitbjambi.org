@@ -239,3 +239,31 @@ tokens/min (~76% of the limit), 200 queued jobs draining in about 8 minutes.
 
 Re-measure with `measure.py` before raising it — the numbers move with the
 prompt, and output tokens include thinking.
+
+## The reliability bottleneck was polling, not the model
+
+Worked out 2026-09-10 for a 200-participant session (~1,000 generations):
+
+| | of free tier |
+|---|---|
+| **Worker requests** | **121% — over** |
+| D1 writes | 6% |
+| D1 reads | 2% |
+| Queue operations | 30% |
+
+Nothing to do with Anthropic. The status endpoint was polled every 2 seconds,
+and with a queue taking minutes to drain the average participant made ~120
+requests. Exceeding 100,000/day returns **error 1027 and stops the Worker for
+everyone** until midnight UTC — not degraded, stopped, mid-session.
+
+Two fixes in `web/app.js`:
+
+- **Backoff**: 2s for the first 30 seconds, 5s to 90 seconds, 10s after. A
+  four-minute wait costs 42 polls instead of 120. Budget goes 121% → **43%**.
+- **Elapsed time on the waiting screen.** Someone at the back of the queue
+  waits minutes while the copy says "sekitar 30 detik"; without a counter that
+  reads as broken and they resubmit, spending another generation and making the
+  queue longer for everyone.
+
+If this is ever run for materially more than 200 people, **Workers Paid is $5/month**
+and removes the ceiling. For one session the backoff is enough.

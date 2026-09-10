@@ -145,37 +145,85 @@ function mark(id, cls) {
   if (cls) el.classList.add(cls);
 }
 
+/**
+ * Polls until the job finishes, backing off as it goes.
+ *
+ * A fixed 2s interval was the single biggest reliability risk in the system.
+ * With a queue that can take minutes to drain, 200 participants polling every
+ * two seconds generates more requests than the Worker plan allows in a day --
+ * and exceeding it stops the Worker for everyone, not just the impatient.
+ *
+ * Backing off cuts that by roughly three quarters while keeping the first
+ * half-minute responsive, which is when most jobs finish anyway.
+ */
+function pollDelay(elapsedMs) {
+  if (elapsedMs < 30000) return 2000;
+  if (elapsedMs < 90000) return 5000;
+  return 10000;
+}
+
+function humanSeconds(ms) {
+  var s = Math.round(ms / 1000);
+  if (s < 60) return s + ' detik';
+  var m = Math.floor(s / 60);
+  var r = s % 60;
+  return m + ' menit' + (r ? ' ' + r + ' detik' : '');
+}
+
+/* Someone at the back of a 200-person queue waits minutes while the screen
+ * says "sekitar 30 detik". Without a running counter that reads as broken,
+ * and they resubmit -- spending another generation and lengthening the queue
+ * for everyone. */
+function showElapsed(ms) {
+  var el = $('elapsed');
+  if (!el) return;
+  if (ms < 20000) { el.innerHTML = ''; return; }
+  var msg = 'Sudah menunggu <b>' + humanSeconds(ms) + '</b>.';
+  if (ms > 45000) msg += '<br>Antrean sedang ramai. Halaman Anda tetap diproses — jangan tutup atau ulangi.';
+  el.innerHTML = msg;
+}
+
 function poll() {
-  var tries = 0;
-  state.timer = setInterval(function () {
-    tries++;
-    /* ~2 minutes, comfortably past the worker's 120s ceiling. */
-    if (tries > 60) {
-      clearInterval(state.timer);
+  var started = Date.now();
+  var softFails = 0;
+
+  var tick = function () {
+    var elapsed = Date.now() - started;
+    showElapsed(elapsed);
+
+    /* Ten minutes covers a full queue drain with room to spare. */
+    if (elapsed > 600000) {
       fail('err-work', 'Terlalu lama menunggu. Sampaikan ke panitia.');
       return;
     }
 
     api('GET', '/status/' + encodeURIComponent(state.jobId)).then(function (r) {
+      softFails = 0;
       if (r.status === 'running') { mark('b1', 'did'); mark('b2', 'now'); }
       if (r.status === 'done') {
-        clearInterval(state.timer);
         mark('b1', 'did'); mark('b2', 'did'); mark('b3', 'did');
+        showElapsed(0);
         finish(r.url);
+        return;
       }
       if (r.status === 'error') {
-        clearInterval(state.timer);
         fail('err-work', r.message || 'Gagal membuat halaman. Coba lagi.');
+        return;
       }
+      state.timer = setTimeout(tick, pollDelay(elapsed));
     }).catch(function (e) {
-      /* A single failed poll is usually a dropped packet, not a dead job.
-       * Only surface it once it has failed repeatedly. */
-      if (tries > 5) {
-        clearInterval(state.timer);
+      /* A single failed poll is usually a dropped packet on a busy venue
+       * network, not a dead job. Only surface it after several in a row. */
+      softFails++;
+      if (softFails > 5) {
         fail('err-work', e.message);
+        return;
       }
+      state.timer = setTimeout(tick, pollDelay(elapsed));
     });
-  }, 2000);
+  };
+
+  tick();
 }
 
 /* --- 4. done ------------------------------------------------------------ */
@@ -246,6 +294,7 @@ function init() {
   $('btn-copy').addEventListener('click', copy);
   $('btn-again').addEventListener('click', function () {
     clearFail('err-gen');
+    if (state.timer) clearTimeout(state.timer);
     show('s-prompt');
   });
 }
