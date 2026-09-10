@@ -39,6 +39,10 @@ database_id   = "04fcb4af-48b9-4425-a7ad-487569fe01a3"
 binding = "QUEUE"
 queue   = "aimpact-generate"
 
+[[queues.consumers]]
+queue               = "aimpact-generate"
+max_batch_size      = 1
+
 # max_concurrency is the throttle that keeps a 200-person burst from becoming
 # a wall of 429s from Anthropic.
 #
@@ -59,6 +63,17 @@ max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0
 
+
+# The dead-letter queue must be consumed, not merely declared. Without this
+# a job that fails three times lands here and stops: its row stays "running"
+# forever, so the participant polls for ten minutes before being told to see
+# the panitia, and nothing anywhere records why.
+[[queues.consumers]]
+queue             = "aimpact-generate-dlq"
+max_batch_size    = 10
+max_concurrency   = 1
+max_retries       = 0
+max_batch_timeout = 5
 
 # Workers routes only attach to proxied hostnames. aimpact and * are proxied;
 # the apex and www are deliberately grey-clouded, so the existing Hostinger
