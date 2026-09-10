@@ -184,3 +184,29 @@ Zone → Workers Routes is the one that looks redundant next to Workers Scripts
 and is not: deploying the script and attaching it to a hostname are separate
 permissions. Creating the zone itself needs `zone.create`, which none of these
 grant — do that in the dashboard.
+
+## Measured, not assumed (2026-09-10)
+
+Account limits, read from the API response headers:
+
+| | |
+|---|---|
+| requests | 1,000/min |
+| input tokens | 500,000/min |
+| **output tokens** | **80,000/min — the only one that binds** |
+
+Three real generations, same system prompt and request shape as `consumer.ts`:
+
+| | |
+|---|---|
+| output tokens | mean **2,544** (min 2,081, max 2,809) |
+| page size | ~5,000 bytes |
+| end-to-end | **~30 s** |
+| `cache_read_input_tokens` | **975 on every call** — prompt caching confirmed working |
+
+`max_concurrency = 12` follows from those: ~24 generations/min, ~61,000 output
+tokens/min (~76% of the limit), 200 queued jobs draining in about 8 minutes.
+15 would sit at 95% of the ceiling and 20 would exceed it.
+
+Re-measure with `measure.py` before raising it — the numbers move with the
+prompt, and output tokens include thinking.

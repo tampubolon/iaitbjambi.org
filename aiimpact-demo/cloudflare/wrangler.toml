@@ -40,13 +40,23 @@ binding = "QUEUE"
 queue   = "aimpact-generate"
 
 # max_concurrency is the throttle that keeps a 200-person burst from becoming
-# a wall of 429s from Anthropic. It replaces the Lambda reserved-concurrency
-# setting in the AWS variant, and is the number to tune once the account's
-# rate-limit tier is known.
+# a wall of 429s from Anthropic.
+#
+# Set from measurement, not guesswork. Measured 2026-09-10 over three real
+# generations: mean 2,544 output tokens each (min 2,081, max 2,809), ~30s
+# end to end. The account's binding limit is output tokens at 80,000/min --
+# requests (1,000/min) and input (500,000/min) are never close.
+#
+#   12 concurrent -> ~24 gen/min -> ~61,000 out tok/min (~76% of limit)
+#                 -> 200 queued jobs drain in ~8 min
+#
+# 15 would reach 95% of the limit and 20 would exceed it. 12 leaves headroom
+# for the variance above and for thinking-token spikes. Re-measure before
+# raising it; the numbers move with the prompt.
 [[queues.consumers]]
 queue               = "aimpact-generate"
 max_batch_size      = 1
-max_concurrency     = 8
+max_concurrency     = 12
 max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0
