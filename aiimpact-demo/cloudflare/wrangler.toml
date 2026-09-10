@@ -51,14 +51,31 @@ max_batch_size      = 1
 # limit is output tokens at 80,000/min; requests (1,000/min) and input
 # (500,000/min) are never close.
 #
-#   9 concurrent -> ~34 gen/min -> ~65,000 out tok/min (~82% of limit)
-#                -> 200 queued jobs drain in ~6 min
-#
 # Counter-intuitively this is LOWER than the 12 used for Opus 5: Haiku
 # finishes in half the time, so each concurrent slot produces tokens twice as
-# fast and fewer slots reach the same ceiling. 12 would sit at 109% and start
-# returning 429s. Re-run measure.py after any model or prompt change.
-max_concurrency     = 9
+# fast and fewer slots reach the same ceiling. Re-run measure.py after any
+# model or prompt change.
+#
+# Confirmed against real bursts on 2026-09-10 (20, 50 and 100 jobs fired
+# simultaneously; 170/170 succeeded, no 429s). Two things the arithmetic
+# alone did not show:
+#
+#   - Queues does not start at max_concurrency. It ramps from 1 over roughly
+#     90-105s, which Cloudflare's own consumer metric confirms by reaching
+#     exactly 9.00 partway through the 50-job run. Bursts that drain before
+#     then never reach full speed: the 20-job run peaked at 5.17 and read
+#     12.5 gen/min, the 100-job run held ~31 gen/min once warm. Short tests
+#     understate throughput; prewarm.py buys part of the ramp back.
+#   - Steady state at 9 is ~31 gen/min (~60,000 out tok/min, 75% of limit),
+#     so there is room above it.
+#
+#  11 concurrent -> ~38 gen/min -> ~74,000 out tok/min (~92% of limit)
+#                -> 200 queued jobs drain in ~5 min once warm
+#
+# 11 is the ceiling this config will accept (check-config.mjs enforces it).
+# Above that the queue outruns the rate limit and 429s start; the retry and
+# dead-letter path handles those, but a demo should not be relying on it.
+max_concurrency     = 11
 max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0

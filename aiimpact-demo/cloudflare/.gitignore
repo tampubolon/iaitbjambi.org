@@ -10,3 +10,4 @@ seed/
 
 # Measurement key
 .ak
+__pycache__/
