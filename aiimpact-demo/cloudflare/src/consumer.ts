@@ -78,6 +78,23 @@ async function generate(env: Env, prompt: string): Promise<string> {
     throw new ParticipantError("Cerita Anda terlalu panjang. Ringkas sedikit ya.");
   }
 
+  // Output tokens are the binding rate limit -- 80k/min against 500k input and
+  // 1000 requests -- so max_concurrency has to be set from this number, not
+  // guessed. cache_read confirms the system prompt is actually being cached;
+  // if it stays 0 across requests something is invalidating the prefix.
+  const u = response.usage;
+  console.log(
+    JSON.stringify({
+      at: "generation",
+      model: response.model,
+      stop: response.stop_reason,
+      in_tokens: u.input_tokens,
+      out_tokens: u.output_tokens,
+      cache_read: u.cache_read_input_tokens ?? 0,
+      cache_write: u.cache_creation_input_tokens ?? 0,
+    }),
+  );
+
   const text = response.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)

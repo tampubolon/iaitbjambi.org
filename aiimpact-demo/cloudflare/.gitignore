@@ -7,3 +7,6 @@ dist/
 # Participant codes are credentials. The CSV goes to whoever prints the
 # handouts, never into the repository.
 seed/
+
+# Measurement key
+.ak
