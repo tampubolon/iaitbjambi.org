@@ -24,13 +24,19 @@ import { make as makeSlug, unique as uniqueSlug } from "./slug";
 import { SlugTaken, Store } from "./store";
 
 /**
- * Effort is `medium`, raised from `low` when the model took over page design.
+ * Effort is `medium` — choosing a palette and layout that suit a bengkel
+ * rather than a butik benefits from some thought.
  *
- * Extracting fields was mechanical; choosing a palette and a layout that suit
- * a bengkel rather than a butik is not. This is the first dial to turn if the
- * pages look generic — before changing model.
+ * It is only sent to models that accept it. Haiku 4.5 rejects
+ * `output_config.effort` with a 400, so the parameter is omitted there rather
+ * than failing every generation.
  */
 const EFFORT = "medium" as const;
+
+/** Models that accept output_config.effort. Haiku 4.5 and Sonnet 4.5 do not. */
+function supportsEffort(model: string): boolean {
+  return /^claude-(opus|sonnet|fable|mythos)-[5-9]/.test(model) || /opus-4-[6-9]/.test(model);
+}
 
 /** A full HTML document runs to a few thousand tokens. Generous so nothing truncates. */
 const MAX_TOKENS = 16000;
@@ -60,7 +66,7 @@ async function generate(env: Env, prompt: string): Promise<string> {
   const response = await client.messages.create({
     model: env.ANTHROPIC_MODEL,
     max_tokens: MAX_TOKENS,
-    output_config: { effort: EFFORT },
+    ...(supportsEffort(env.ANTHROPIC_MODEL) ? { output_config: { effort: EFFORT } } : {}),
     // Byte-identical for every participant, so it caches after the first call
     // and reads back at roughly a tenth of the input price.
     system: [{ type: "text", text: SYSTEM, cache_control: { type: "ephemeral" } }],

@@ -187,6 +187,35 @@ grant — do that in the dashboard.
 
 ## Measured, not assumed (2026-09-10)
 
+**Now running Claude Haiku 4.5.** Re-measure with `measure.py <model>` after any
+model or prompt change — every number below moves.
+
+| | Opus 5 | **Haiku 4.5** |
+|---|---|---|
+| output tokens / page | 2,544 | **1,939** |
+| end to end | ~30 s | **~16-21 s** |
+| 1,000 generations | $64.65 | **$10.49** |
+| `max_concurrency` | 12 | **9** |
+| 200 jobs drain in | 8.3 min | **5.9 min** |
+| prompt caching | 975 tok/call | **none — see below** |
+
+Two things worth understanding:
+
+**Concurrency went *down*, not up.** Haiku finishes in half the time, so each
+concurrent slot produces output tokens twice as fast. The same 80,000/min
+ceiling is therefore reached with fewer slots: 12 would sit at 109% and start
+returning 429s, 9 sits at 82%.
+
+**Prompt caching stopped working.** `cache_read_input_tokens` is 0 on every
+Haiku call, against 975 on Opus. The minimum cacheable prefix is model-dependent
+and this system prompt (~975 tokens) falls below Haiku's. The cost impact is
+negligible — input is $1/MTok and 800 uncached tokens is $0.0008 a call — but
+do not assume caching is active on this model.
+
+**`effort` is not sent to Haiku.** `output_config.effort` returns a 400 there;
+`supportsEffort()` in `consumer.ts` omits it. Removing that guard breaks every
+generation.
+
 Account limits, read from the API response headers:
 
 | | |

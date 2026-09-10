@@ -12,14 +12,14 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).parent
-# Key is read from a file so it never appears in a command line or shell
-# history. Create it with: printf %s "$ANTHROPIC_API_KEY" > .ak
 KEY = (HERE / ".ak").read_text().strip()
 PROMPT_TS = HERE / "src/prompt.ts"
 
 # Pull SYSTEM out of prompt.ts so this measures the prompt that actually ships.
 src = PROMPT_TS.read_text(encoding="utf-8")
 SYSTEM = re.search(r"export const SYSTEM = `(.*?)`;", src, re.S).group(1)
+
+MODEL = sys.argv[1] if len(sys.argv) > 1 else "claude-opus-5"
 
 PROMPTS = [
     "Kedai Es Campur Pak Ujang di Pasar Angso Duo Jambi. Es campur Rp12.000, "
@@ -36,9 +36,9 @@ PROMPTS = [
 
 def call(user_prompt: str) -> dict:
     body = {
-        "model": "claude-opus-5",
+        "model": MODEL,
         "max_tokens": 16000,
-        "output_config": {"effort": "medium"},
+        **({"output_config": {"effort": "medium"}} if "opus" in MODEL or "sonnet-5" in MODEL else {}),
         "system": [
             {"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}
         ],
@@ -92,7 +92,7 @@ print(f"  cache reads   : {[r['cache_r'] for r in rows]}")
 print()
 
 OUT_TPM = 80_000
-DURATION = 30  # measured end-to-end seconds per generation
+DURATION = float(sys.argv[2]) if len(sys.argv) > 2 else 30
 gen_min = OUT_TPM / mean
 conc = gen_min * DURATION / 60
 print(f"  at {mean:,.0f} out tok/gen and {DURATION}s each:")

@@ -24,7 +24,7 @@ run_worker_first = true
 [vars]
 DOMAIN = "iaitbjambi.org"
 MAX_GENERATIONS = "15"
-ANTHROPIC_MODEL = "claude-opus-5"
+ANTHROPIC_MODEL = "claude-haiku-4-5"
 
 # Secrets, set with `wrangler secret put <NAME>`, never in this file:
 #   ANTHROPIC_API_KEY
@@ -42,21 +42,19 @@ queue   = "aimpact-generate"
 # max_concurrency is the throttle that keeps a 200-person burst from becoming
 # a wall of 429s from Anthropic.
 #
-# Set from measurement, not guesswork. Measured 2026-09-10 over three real
-# generations: mean 2,544 output tokens each (min 2,081, max 2,809), ~30s
-# end to end. The account's binding limit is output tokens at 80,000/min --
-# requests (1,000/min) and input (500,000/min) are never close.
+# Set from measurement. Measured 2026-09-10, Haiku 4.5, three real
+# generations: mean 1,939 output tokens each, ~16s end to end. The binding
+# limit is output tokens at 80,000/min; requests (1,000/min) and input
+# (500,000/min) are never close.
 #
-#   12 concurrent -> ~24 gen/min -> ~61,000 out tok/min (~76% of limit)
-#                 -> 200 queued jobs drain in ~8 min
+#   9 concurrent -> ~34 gen/min -> ~65,000 out tok/min (~82% of limit)
+#                -> 200 queued jobs drain in ~6 min
 #
-# 15 would reach 95% of the limit and 20 would exceed it. 12 leaves headroom
-# for the variance above and for thinking-token spikes. Re-measure before
-# raising it; the numbers move with the prompt.
-[[queues.consumers]]
-queue               = "aimpact-generate"
-max_batch_size      = 1
-max_concurrency     = 12
+# Counter-intuitively this is LOWER than the 12 used for Opus 5: Haiku
+# finishes in half the time, so each concurrent slot produces tokens twice as
+# fast and fewer slots reach the same ceiling. 12 would sit at 109% and start
+# returning 429s. Re-run measure.py after any model or prompt change.
+max_concurrency     = 9
 max_retries         = 3
 dead_letter_queue   = "aimpact-generate-dlq"
 max_batch_timeout   = 0
