@@ -120,3 +120,20 @@ AS $$
 $$;
 
 REVOKE ALL ON FUNCTION ticket_counts() FROM anon, authenticated, public;
+
+-- Panitia tickets: the reserve codes prewarm.py uses to spin the builder's
+-- queue up before the room arrives. They are real tickets so the admission
+-- gate lets them through, pre-admitted so nobody has to scan them, and
+-- flagged so they do not inflate the attendance the board reports.
+ALTER TABLE tickets ADD COLUMN IF NOT EXISTS is_staff boolean NOT NULL DEFAULT false;
+
+CREATE OR REPLACE FUNCTION ticket_counts()
+RETURNS TABLE (invited bigint, attended bigint, revoked bigint)
+LANGUAGE sql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+  SELECT (SELECT count(*) FROM tickets WHERE status = 'active' AND NOT is_staff),
+         (SELECT count(*) FROM check_ins c JOIN tickets t USING (ticket_id)
+           WHERE NOT t.is_staff),
+         (SELECT count(*) FROM tickets WHERE status = 'revoked' AND NOT is_staff);
+$$;
+REVOKE ALL ON FUNCTION ticket_counts() FROM anon, authenticated, public;

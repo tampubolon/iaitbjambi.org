@@ -158,6 +158,14 @@ const issued = good.map((p, i) => {
   };
 });
 
+// The tail of the code list is not handed to participants; prewarm.py uses it
+// to spin the builder's queue up before the room arrives. Those codes need
+// real tickets now that the builder refuses anyone the door has not admitted,
+// so they are issued pre-admitted and flagged is_staff — present for the gate,
+// absent from the attendance the board reports.
+const RESERVE = 20;
+const reserve = builderCodes.slice(-RESERVE).filter((c) => !issued.some((t) => t.builder === c));
+
 mkdirSync("out", { recursive: true });
 
 writeFileSync(
@@ -170,6 +178,18 @@ writeFileSync(
       `VALUES (${sql(t.ticket_id)}, ${sql(t.name)}, ${sql(t.wa)}, ${sql(t.hash)}, ` +
       `${sql(t.manual)}, ${t.builder ? sql(t.builder) : "NULL"});`,
     )
+    .join("\n") +
+  "\n\n-- Panitia reserve codes: pre-admitted, excluded from attendance.\n" +
+  reserve
+    .map((c, i) => {
+      const id = `tk_staff_${c.toLowerCase()}`;
+      return (
+        `INSERT INTO tickets (ticket_id, name, wa_number, token_hash, manual_code, ` +
+        `builder_code, is_staff) VALUES (${sql(id)}, ${sql(`PANITIA ${i + 1}`)}, '-', ` +
+        `${sql(sha256("staff:" + c))}, ${sql(c)}, ${sql(c)}, true);\n` +
+        `INSERT INTO check_ins (ticket_id, staff) VALUES (${sql(id)}, 'sistem');`
+      );
+    })
     .join("\n") + "\n",
 );
 
@@ -249,7 +269,7 @@ writeFileSync(
 );
 
 console.log(`
-  out/tickets.sql      ${issued.length} tickets -> npm run db:tickets
+  out/tickets.sql      ${issued.length} tickets + ${reserve.length} panitia -> npm run db:tickets
   out/distribusi.csv   import to Google Sheets (formulas in columns F and H)
   out/cetak.html       open and print (8 slips per A4 page)
   out/tokens.txt       KEEP PRIVATE - the only copy of the plaintext tokens

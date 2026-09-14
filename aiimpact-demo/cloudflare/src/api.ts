@@ -13,6 +13,7 @@
  */
 import { bearer, sign, verify } from "./auth";
 import { normalise, valid } from "./code";
+import { admitted } from "./ticket";
 import type { Env } from "./model";
 import { CapReached, NotFound, Store } from "./store";
 
@@ -68,6 +69,22 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     // is wrong.
     const code = normalise(body?.code ?? "");
     if (!valid(code)) return fault(400, "Kode tidak terbaca. Periksa lembar peserta Anda.");
+
+    // The builder opens only for someone the door has already admitted. The
+    // code is printed on a slip and shown on a ticket page, so without this it
+    // would work from anywhere, for anyone holding a photo of either.
+    try {
+      if (!(await admitted(env, code))) {
+        return fault(
+          403,
+          "Kode ini belum aktif. Silakan registrasi di meja panitia terlebih dahulu.",
+        );
+      }
+    } catch (err) {
+      // Fails closed: an unreachable ticket service must not open the builder.
+      console.error("redeem: admission check failed", err);
+      return fault(503, "Sistem registrasi sedang sibuk. Coba lagi sebentar lagi.");
+    }
 
     try {
       const p = await store.redeem(code);
