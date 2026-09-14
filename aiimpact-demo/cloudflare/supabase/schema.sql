@@ -227,3 +227,77 @@ BEGIN
   RETURN QUERY SELECT v_first, v_at, v_by;
 END; $$;
 REVOKE ALL ON FUNCTION admin_admit(text, text, text) FROM anon, authenticated, public;
+-- === global lab override =================================================
+--
+-- Binding builder access to check-in makes the registration desk a single
+-- point of failure for the lab: if the scanner dies, or the queue is long
+-- enough that the session has to start anyway, nobody can build a page. This
+-- is the lever that opens the lab for everyone without un-gating it
+-- permanently or editing rows by hand.
+--
+-- It relaxes ONE condition — having been admitted. A ticket must still exist
+-- and still be active, so revoked tickets and codes that were never issued
+-- stay refused even while the override is on.
+
+CREATE TABLE IF NOT EXISTS settings (
+  key        text PRIMARY KEY,
+  value      text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by text
+);
+
+INSERT INTO settings (key, value) VALUES ('lab_open_to_all', 'false')
+  ON CONFLICT (key) DO NOTHING;
+
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON settings FROM anon, authenticated;
+
+/*
+ * Whether this code may open the builder.
+ *
+ * One statement, so the override and the attendance are read from the same
+ * snapshot — an admin flipping the switch mid-request cannot produce an answer
+ * derived from half the old state and half the new.
+ */
+CREATE OR REPLACE FUNCTION builder_allowed(p_code text)
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM tickets t
+     WHERE t.builder_code = p_code
+       AND t.status = 'active'
+       AND (
+         EXISTS (SELECT 1 FROM check_ins c WHERE c.ticket_id = t.ticket_id)
+         OR (SELECT value = 'true' FROM settings WHERE key = 'lab_open_to_all')
+       )
+  );
+$$;
+
+/* Flips the override, recording who and why. */
+CREATE OR REPLACE FUNCTION set_lab_open(p_open boolean, p_actor text, p_reason text)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+    RAISE EXCEPTION 'reason required' USING ERRCODE = 'check_violation';
+  END IF;
+  UPDATE settings SET value = CASE WHEN p_open THEN 'true' ELSE 'false' END,
+                      updated_at = now(), updated_by = p_actor
+   WHERE key = 'lab_open_to_all';
+  INSERT INTO audit_logs (actor, action, ticket_id, reason, detail)
+  VALUES (p_actor, CASE WHEN p_open THEN 'lab_unlock_all' ELSE 'lab_relock' END,
+          NULL, p_reason, CASE WHEN p_open THEN 'lab dibuka untuk semua'
+                               ELSE 'lab kembali butuh check-in' END);
+  RETURN p_open;
+END; $$;
+
+CREATE OR REPLACE FUNCTION lab_open() RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+AS $$ SELECT value = 'true' FROM settings WHERE key = 'lab_open_to_all'; $$;
+
+REVOKE ALL ON FUNCTION builder_allowed(text) FROM anon, authenticated, public;
+REVOKE ALL ON FUNCTION set_lab_open(boolean, text, text) FROM anon, authenticated, public;
+REVOKE ALL ON FUNCTION lab_open() FROM anon, authenticated, public;

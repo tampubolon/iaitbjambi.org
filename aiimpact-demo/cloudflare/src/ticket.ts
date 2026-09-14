@@ -179,29 +179,47 @@ export async function counts(env: Env): Promise<Counts> {
 }
 
 /**
- * Reports whether the holder of this builder code has been admitted at the
- * door, which is what gates access to the builder.
+ * Reports whether this builder code may open the builder.
  *
- * Fails CLOSED. A code with no ticket, a revoked ticket, or no attendance row
- * is refused, and so is a Supabase outage — the caller lets StoreError
- * propagate rather than catching it into a yes. The alternative, opening the
- * builder whenever the check cannot be made, would mean the gate is absent
- * exactly when the system is least healthy. If Supabase is down nobody can be
- * checked in either, so the event is already stopped; this does not make it
- * worse.
+ * Normally that means the holder has been admitted at the door. When the admin
+ * override is on it means only that they hold a live ticket — see
+ * builder_allowed() in supabase/schema.sql, which evaluates both in one
+ * statement so the flag and the attendance come from the same snapshot.
+ *
+ * Fails CLOSED. No ticket, a revoked ticket, no attendance, or an unreachable
+ * Supabase all refuse; the caller lets StoreError propagate rather than
+ * catching it into a yes. Opening the builder whenever the check cannot be
+ * made would remove the gate exactly when the system is least healthy, and if
+ * Supabase is down nobody can be checked in either.
  *
  * @throws StoreError when Supabase cannot be reached or rejects the query.
  */
 export async function admitted(env: Env, builderCode: string): Promise<boolean> {
   const clean = normalise(builderCode);
   if (!clean) return false;
-  const rows = (await rest(
-    env,
-    `tickets?builder_code=eq.${clean}&status=eq.active&select=ticket_id,check_ins(checked_at)`,
-  )) as { check_ins: unknown }[] | null;
+  const allowed = await rest(env, "rpc/builder_allowed", {
+    method: "POST",
+    body: JSON.stringify({ p_code: clean }),
+  });
+  return allowed === true;
+}
 
-  const row = Array.isArray(rows) ? rows[0] : undefined;
-  return Boolean(row && firstAttendance(row.check_ins as never));
+/** Whether the admin has opened the lab to everyone with a live ticket. */
+export async function labOpen(env: Env): Promise<boolean> {
+  return (await rest(env, "rpc/lab_open", { method: "POST", body: "{}" })) === true;
+}
+
+/** Opens or re-closes the lab for everyone, with a reason, audited. */
+export async function setLabOpen(
+  env: Env,
+  open: boolean,
+  actor: string,
+  reason: string,
+): Promise<void> {
+  await rest(env, "rpc/set_lab_open", {
+    method: "POST",
+    body: JSON.stringify({ p_open: open, p_actor: actor, p_reason: reason }),
+  });
 }
 
 // --- admin -------------------------------------------------------------
