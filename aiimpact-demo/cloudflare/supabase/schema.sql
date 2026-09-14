@@ -137,3 +137,93 @@ AS $$
          (SELECT count(*) FROM tickets WHERE status = 'revoked' AND NOT is_staff);
 $$;
 REVOKE ALL ON FUNCTION ticket_counts() FROM anon, authenticated, public;
+-- Admin actions leave a trail. PRD F10 requires a reason and an audit record
+-- for any check-in correction; this covers every admin write, not only those,
+-- because "who un-admitted this person and why" is the question that gets
+-- asked after the event, when nobody remembers.
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id        bigserial PRIMARY KEY,
+  at        timestamptz NOT NULL DEFAULT now(),
+  actor     text NOT NULL,
+  action    text NOT NULL,
+  ticket_id text,
+  reason    text NOT NULL,
+  detail    text
+);
+
+CREATE INDEX IF NOT EXISTS audit_at ON audit_logs (at DESC);
+
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON audit_logs FROM anon, authenticated;
+REVOKE ALL ON SEQUENCE audit_logs_id_seq FROM anon, authenticated;
+
+-- Each admin write is one statement that both acts and records, so an action
+-- can never be applied without its audit row, or recorded without happening.
+CREATE OR REPLACE FUNCTION admin_set_status(
+  p_ticket_id text, p_status text, p_actor text, p_reason text)
+RETURNS TABLE (ticket_id text, name text, status text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE v_row tickets%ROWTYPE;
+BEGIN
+  IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+    RAISE EXCEPTION 'reason required' USING ERRCODE = 'check_violation';
+  END IF;
+  UPDATE tickets t SET status = p_status WHERE t.ticket_id = p_ticket_id RETURNING * INTO v_row;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ticket not found' USING ERRCODE = 'no_data_found';
+  END IF;
+  INSERT INTO audit_logs (actor, action, ticket_id, reason, detail)
+  VALUES (p_actor, 'status:' || p_status, p_ticket_id, p_reason, v_row.name);
+  RETURN QUERY SELECT v_row.ticket_id, v_row.name, p_status;
+END; $$;
+
+-- Undo a check-in. The PRD calls this a correction and insists on a reason
+-- (F10): someone scanned the wrong person, or a duplicate name was admitted.
+CREATE OR REPLACE FUNCTION admin_undo_check_in(
+  p_ticket_id text, p_actor text, p_reason text)
+RETURNS TABLE (ticket_id text, removed boolean)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE v_gone integer;
+BEGIN
+  IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+    RAISE EXCEPTION 'reason required' USING ERRCODE = 'check_violation';
+  END IF;
+  DELETE FROM check_ins c WHERE c.ticket_id = p_ticket_id;
+  GET DIAGNOSTICS v_gone = ROW_COUNT;
+  INSERT INTO audit_logs (actor, action, ticket_id, reason, detail)
+  VALUES (p_actor, 'undo_check_in', p_ticket_id, p_reason,
+          CASE WHEN v_gone > 0 THEN 'removed' ELSE 'was not checked in' END);
+  RETURN QUERY SELECT p_ticket_id, v_gone > 0;
+END; $$;
+
+REVOKE ALL ON FUNCTION admin_set_status(text, text, text, text) FROM anon, authenticated, public;
+REVOKE ALL ON FUNCTION admin_undo_check_in(text, text, text) FROM anon, authenticated, public;
+-- "by" is reserved, so the column do_check_in returns under that name cannot
+-- be read back as v_res.by — it has to be quoted. Aliasing into plain locals
+-- keeps the rest of the body readable.
+CREATE OR REPLACE FUNCTION admin_admit(p_ticket_id text, p_actor text, p_reason text)
+RETURNS TABLE (first boolean, at timestamptz, by text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_first boolean;
+  v_at    timestamptz;
+  v_by    text;
+BEGIN
+  IF p_reason IS NULL OR btrim(p_reason) = '' THEN
+    RAISE EXCEPTION 'reason required' USING ERRCODE = 'check_violation';
+  END IF;
+
+  SELECT d.first, d.at, d."by" INTO v_first, v_at, v_by
+    FROM do_check_in(p_ticket_id, p_actor || ' (admin)') d;
+
+  INSERT INTO audit_logs (actor, action, ticket_id, reason, detail)
+  VALUES (p_actor, 'admit', p_ticket_id, p_reason,
+          CASE WHEN v_first THEN 'ditandai hadir' ELSE 'sudah hadir sebelumnya' END);
+
+  RETURN QUERY SELECT v_first, v_at, v_by;
+END; $$;
+REVOKE ALL ON FUNCTION admin_admit(text, text, text) FROM anon, authenticated, public;

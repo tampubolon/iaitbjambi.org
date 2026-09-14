@@ -36,6 +36,8 @@ export interface Env {
   DEEPSEEK_MODEL?: string;
   /** Shared password for the check-in staff pages. */
   STAFF_PASSWORD?: string;
+  /** Separate from STAFF_PASSWORD: admins can revoke and correct. */
+  ADMIN_PASSWORD?: string;
   /** Supabase holds the ticketing tables; the builder still uses D1. */
   SUPABASE_URL?: string;
   SUPABASE_SERVICE_KEY?: string;
