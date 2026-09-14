@@ -173,6 +173,7 @@ export function dashboard(
       <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
       <a class="btn ghost" href="/admin/log">Riwayat tindakan admin</a>
       <a class="btn ghost" href="/scan">Buka scanner</a>
+      <form method="POST" action="/admin/keluar"><button class="ghost" type="submit">Keluar</button></form>
       ${labIsOpen ? "" : labOpenControl(c)}
     </div>`,
   );
@@ -196,7 +197,9 @@ export function auditPage(c: Ctx, entries: tickets.AuditEntry[]): Response {
   return c.page(
     "Riwayat admin",
     `<div class="wrap"><h1 style="padding:0 4px">Riwayat tindakan</h1>${rows}
-      <a class="btn ghost" href="/admin">Kembali</a></div>`,
+      <a class="btn ghost" href="/admin">Kembali</a>
+      <form method="POST" action="/admin/keluar"><button class="ghost" type="submit">Keluar</button></form>
+    </div>`,
   );
 }
 
