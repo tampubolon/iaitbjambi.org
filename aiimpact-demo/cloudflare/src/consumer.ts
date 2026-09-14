@@ -17,6 +17,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 
+import * as deepseek from "./deepseek";
 import type { Env, QueueMessage } from "./model";
 import { SYSTEM } from "./prompt";
 import { sanitize, SanitizeError } from "./sanitize";
@@ -60,7 +61,57 @@ export function extractHtml(text: string): string {
   return (start > 0 ? body.slice(start) : body).trim();
 }
 
+/**
+ * Turns assistant text into a validated document, whichever provider wrote it.
+ *
+ * @throws Error when the response is not an HTML document, which the caller
+ * treats as a failed attempt rather than the participant's fault.
+ */
+function toDocument(text: string): string {
+  const html = extractHtml(text);
+  if (!/<html[\s>]/i.test(html)) {
+    throw new Error("model did not return an HTML document");
+  }
+  return html;
+}
+
+/**
+ * Asks Anthropic first, then DeepSeek if Anthropic could not answer.
+ *
+ * The fallback covers provider failure — an empty credit balance, a 429 that
+ * outlived its retries, a 5xx — and nothing else. A ParticipantError is
+ * deliberately NOT retried elsewhere: `max_tokens` means the same prompt would
+ * overrun the same budget, and a refusal is a safety decision that a second
+ * provider must not be used to route around.
+ */
 async function generate(env: Env, prompt: string): Promise<string> {
+  try {
+    return await generateWithAnthropic(env, prompt);
+  } catch (err) {
+    if (err instanceof ParticipantError) throw err;
+    if (!deepseek.configured(env)) throw err;
+
+    // Logged at error level even though it recovers: a session where this
+    // fires for every job is one where Anthropic is down, and that is worth
+    // seeing while the room is still in front of you.
+    console.error(
+      JSON.stringify({ at: "provider_fallback", to: "deepseek", because: String(err).slice(0, 200) }),
+    );
+
+    const { text, finish } = await deepseek.complete(env, SYSTEM, prompt);
+    if (finish === "length") {
+      throw new ParticipantError("Cerita Anda terlalu panjang. Ringkas sedikit ya.");
+    }
+    if (finish === "content_filter") {
+      throw new ParticipantError(
+        "Cerita Anda tidak dapat diproses. Coba tulis ulang dengan kalimat yang berbeda.",
+      );
+    }
+    return toDocument(text);
+  }
+}
+
+async function generateWithAnthropic(env: Env, prompt: string): Promise<string> {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
   const response = await client.messages.create({
@@ -92,6 +143,7 @@ async function generate(env: Env, prompt: string): Promise<string> {
   console.log(
     JSON.stringify({
       at: "generation",
+      provider: "anthropic",
       model: response.model,
       stop: response.stop_reason,
       in_tokens: u.input_tokens,
@@ -106,11 +158,7 @@ async function generate(env: Env, prompt: string): Promise<string> {
     .map((b) => b.text)
     .join("");
 
-  const html = extractHtml(text);
-  if (!/<html[\s>]/i.test(html)) {
-    throw new Error("model did not return an HTML document");
-  }
-  return html;
+  return toDocument(text);
 }
 
 /**

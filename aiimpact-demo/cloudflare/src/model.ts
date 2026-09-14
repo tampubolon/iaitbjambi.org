@@ -31,6 +31,9 @@ export interface Env {
   ANTHROPIC_MODEL: string;
   ANTHROPIC_API_KEY: string;
   SESSION_SECRET: string;
+  /** Fallback provider. Absent means Anthropic only — see deepseek.ts. */
+  DEEPSEEK_API_KEY?: string;
+  DEEPSEEK_MODEL?: string;
 }
 
 export interface QueueMessage {
