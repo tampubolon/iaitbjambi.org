@@ -33,6 +33,25 @@ const PRIVATE = {
     "script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
 };
 
+/**
+ * Formats a Postgres timestamptz as Jakarta wall-clock time.
+ *
+ * Postgres returns UTC ISO ("2026-09-14T16:56:22.79+00:00"); the door needs
+ * "23:56". Labelling the raw UTC string "WIB" would be wrong by seven hours,
+ * which is exactly the kind of thing nobody notices until someone disputes
+ * when they arrived.
+ */
+export function wib(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(d);
+}
+
 /** Escapes text for HTML. Participant names are data, not markup. */
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
@@ -97,7 +116,7 @@ function eventLine(env: Env): string {
 function ticketPage(t: Ticket, token: string, env: Env): Response {
   const url = `https://tiket.${env.DOMAIN}/t/${token}`;
   const already = t.checked_at
-    ? `<div class="res warn"><b>Sudah check-in</b>${esc(t.checked_at)} WIB</div>`
+    ? `<div class="res warn"><b>Sudah check-in</b>${esc(wib(t.checked_at))} WIB</div>`
     : "";
 
   return page(
@@ -302,7 +321,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const t = /^\/t\/([0-9A-HJKMNP-TV-Z]{26})\/?$/.exec(path);
   if (t) {
     const token = t[1]!;
-    const ticket = await tickets.byToken(env.DB, token);
+    const ticket = await tickets.byToken(env, token);
     if (!ticket || ticket.status !== "active") {
       return page("Tiket tidak berlaku", `<div class="wrap"><div class="card">
         <h1>Tiket tidak berlaku</h1>
@@ -318,7 +337,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const q = /^\/qr\/([0-9A-HJKMNP-TV-Z]{26})\.png$/.exec(path);
   if (q) {
     const token = q[1]!;
-    const ticket = await tickets.byToken(env.DB, token);
+    const ticket = await tickets.byToken(env, token);
     if (!ticket || ticket.status !== "active") return new Response("gone", { status: 404 });
     return new Response(png(`https://tiket.${env.DOMAIN}/t/${token}`, 6), {
       headers: {
@@ -362,14 +381,14 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     }
 
     if (path === "/scan") return scanPage(who);
-    if (path === "/papan") return boardPage(await tickets.counts(env.DB));
+    if (path === "/papan") return boardPage(await tickets.counts(env));
 
     if (path === "/api/checkin" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { token?: string; code?: string };
       const ticket = body.token
-        ? await tickets.byToken(env.DB, body.token)
+        ? await tickets.byToken(env, body.token)
         : body.code
-          ? await tickets.byManualCode(env.DB, body.code)
+          ? await tickets.byManualCode(env, body.code)
           : null;
 
       if (!ticket) return json({ title: "Tiket tidak dikenali", detail: "Arahkan ke meja bantuan." }, 404);
@@ -377,8 +396,13 @@ export async function handle(req: Request, env: Env): Promise<Response> {
         return json({ title: "Tiket dibatalkan", detail: "Arahkan ke meja bantuan." }, 409);
       }
 
-      const result = await tickets.checkIn(env.DB, ticket.ticket_id, who);
-      return json({ ...result, name: ticket.name, code: ticket.manual_code });
+      const result = await tickets.checkIn(env, ticket.ticket_id, who);
+      return json({
+        ...result,
+        at: wib(result.at),
+        name: ticket.name,
+        code: ticket.manual_code,
+      });
     }
     return json({ title: "Tidak ditemukan" }, 404);
   }

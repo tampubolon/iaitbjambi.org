@@ -1,13 +1,50 @@
 /**
- * Ticket lookup and check-in.
+ * Ticket lookup and check-in, against Supabase.
  *
- * The invariant this file exists to hold is PRD s12: two phones confirming the
- * same ticket at the same moment must produce exactly one attendance, and a
- * retry after a lost response must not produce a second. Both fall out of
- * `check_ins.ticket_id` being a PRIMARY KEY — the engine decides, not a
- * read-then-write in application code that can interleave.
+ * Reached over PostgREST rather than a Postgres connection: the direct host is
+ * IPv6-only and the shared pooler does not carry this tenant, while Workers
+ * egress is IPv4 and has no connection pool to speak of. HTTPS is the link
+ * that actually exists between the two.
+ *
+ * The invariant this file exists to hold is PRD s12 — two phones confirming
+ * the same ticket at the same moment produce exactly one attendance, and a
+ * retry after a lost response does not produce a second. That is not enforced
+ * here. It lives in the `do_check_in` function in supabase/schema.sql, so the
+ * admissibility check and the write cannot be separated by a scheduler, a
+ * retry, or a second Worker isolate.
+ *
+ * Every call carries the service_role key, which bypasses RLS. The tables have
+ * RLS on with no policies and no grants to anon, so this Worker is the only
+ * thing that can read participant data (PRD s10).
  */
-import type { Ticket, TicketRow } from "./model";
+import type { Env, Ticket } from "./model";
+
+/** Raised when Supabase itself is unreachable or rejects the request. */
+export class StoreError extends Error {}
+
+async function rest(env: Env, path: string, init: RequestInit = {}): Promise<unknown> {
+  const key = env.SUPABASE_SERVICE_KEY;
+  if (!env.SUPABASE_URL || !key) throw new StoreError("supabase not configured");
+
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: key,
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  const text = await response.text();
+  if (!response.ok) {
+    // Keep the body. At the door, "which ticket" and "why" is the difference
+    // between waving someone through and sending them to the help desk.
+    throw new StoreError(`supabase ${response.status} ${text.slice(0, 300)}`);
+  }
+  return text ? JSON.parse(text) : null;
+}
 
 /**
  * SHA-256, hex.
@@ -22,16 +59,34 @@ export async function hashToken(token: string): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Tokens are Crockford base32; anything else is not worth a database round trip. */
+/** Tokens are Crockford base32; anything else is not worth a round trip. */
 export function looksLikeToken(value: string): boolean {
   return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
 }
 
-const COLUMNS = `t.ticket_id, t.name, t.wa_number, t.manual_code, t.builder_code,
-                 t.status, c.checked_at, c.staff AS checked_by`;
+/** Normalises what a volunteer typed: lowercase, spaces, stray punctuation. */
+export function normaliseCode(code: string): string {
+  return code.toUpperCase().replace(/[^0-9A-Z]/g, "");
+}
 
-function toTicket(row: TicketRow | null): Ticket | null {
+/** check_ins embeds as an array because PostgREST follows the foreign key. */
+interface Row {
+  ticket_id: string;
+  name: string;
+  wa_number: string;
+  manual_code: string;
+  builder_code: string | null;
+  status: "active" | "revoked";
+  check_ins: { checked_at: string; staff: string }[] | null;
+}
+
+const SELECT =
+  "select=ticket_id,name,wa_number,manual_code,builder_code,status,check_ins(checked_at,staff)";
+
+function toTicket(rows: unknown): Ticket | null {
+  const row = Array.isArray(rows) ? (rows[0] as Row | undefined) : undefined;
   if (!row) return null;
+  const seen = row.check_ins?.[0];
   return {
     ticket_id: row.ticket_id,
     name: row.name,
@@ -39,33 +94,20 @@ function toTicket(row: TicketRow | null): Ticket | null {
     manual_code: row.manual_code,
     builder_code: row.builder_code,
     status: row.status,
-    checked_at: row.checked_at ?? null,
-    checked_by: row.checked_by ?? null,
+    checked_at: seen?.checked_at ?? null,
+    checked_by: seen?.staff ?? null,
   };
 }
 
-export async function byToken(db: D1Database, token: string): Promise<Ticket | null> {
-  const row = await db
-    .prepare(
-      `SELECT ${COLUMNS} FROM tickets t
-       LEFT JOIN check_ins c ON c.ticket_id = t.ticket_id
-       WHERE t.token_hash = ?`,
-    )
-    .bind(await hashToken(token))
-    .first<TicketRow>();
-  return toTicket(row);
+export async function byToken(env: Env, token: string): Promise<Ticket | null> {
+  const hash = await hashToken(token);
+  return toTicket(await rest(env, `tickets?token_hash=eq.${hash}&${SELECT}&limit=1`));
 }
 
-export async function byManualCode(db: D1Database, code: string): Promise<Ticket | null> {
-  const row = await db
-    .prepare(
-      `SELECT ${COLUMNS} FROM tickets t
-       LEFT JOIN check_ins c ON c.ticket_id = t.ticket_id
-       WHERE t.manual_code = ?`,
-    )
-    .bind(code.toUpperCase().replace(/[^0-9A-Z]/g, ""))
-    .first<TicketRow>();
-  return toTicket(row);
+export async function byManualCode(env: Env, code: string): Promise<Ticket | null> {
+  const clean = normaliseCode(code);
+  if (!clean) return null;
+  return toTicket(await rest(env, `tickets?manual_code=eq.${clean}&${SELECT}&limit=1`));
 }
 
 export interface CheckInResult {
@@ -78,40 +120,23 @@ export interface CheckInResult {
 /**
  * Records attendance, at most once, ever.
  *
- * `ON CONFLICT DO NOTHING ... RETURNING` makes the outcome a single atomic
- * statement: a returned row means this call created the attendance, no row
- * means someone (or some earlier retry of this same call) got there first. The
- * caller then reads back the winning row, so both phones show the same time
- * and the same staff name rather than disagreeing about who admitted whom.
+ * Delegates to `do_check_in`, which decides admissibility and writes in one
+ * statement and returns the winning row either way — so two phones racing show
+ * the same time and the same staff name rather than disagreeing about who
+ * admitted whom.
  *
- * @throws Error when the ticket does not exist or is revoked — checked here
- * rather than by the caller so there is no gap between the check and the write.
+ * @throws StoreError when the ticket does not exist or is revoked; the
+ * function raises `check_violation` and PostgREST surfaces it as a 400.
  */
-export async function checkIn(
-  db: D1Database,
-  ticketId: string,
-  staff: string,
-): Promise<CheckInResult> {
-  const inserted = await db
-    .prepare(
-      `INSERT INTO check_ins (ticket_id, staff)
-       SELECT ?, ? FROM tickets WHERE ticket_id = ? AND status = 'active'
-       ON CONFLICT (ticket_id) DO NOTHING
-       RETURNING checked_at, staff`,
-    )
-    .bind(ticketId, staff, ticketId)
-    .first<{ checked_at: string; staff: string }>();
+export async function checkIn(env: Env, ticketId: string, staff: string): Promise<CheckInResult> {
+  const rows = (await rest(env, "rpc/do_check_in", {
+    method: "POST",
+    body: JSON.stringify({ p_ticket_id: ticketId, p_staff: staff }),
+  })) as { first: boolean; at: string; by: string }[] | null;
 
-  if (inserted) return { first: true, at: inserted.checked_at, by: inserted.staff };
-
-  // No insert: either already checked in, or the ticket is not admissible.
-  const existing = await db
-    .prepare(`SELECT checked_at, staff FROM check_ins WHERE ticket_id = ?`)
-    .bind(ticketId)
-    .first<{ checked_at: string; staff: string }>();
-
-  if (existing) return { first: false, at: existing.checked_at, by: existing.staff };
-  throw new Error("ticket not active");
+  const row = rows?.[0];
+  if (!row) throw new StoreError("check-in returned no row");
+  return row;
 }
 
 export interface Counts {
@@ -120,15 +145,10 @@ export interface Counts {
   revoked: number;
 }
 
-/** Dashboard figures (PRD F06). One query; the door is busy. */
-export async function counts(db: D1Database): Promise<Counts> {
-  const row = await db
-    .prepare(
-      `SELECT
-         (SELECT COUNT(*) FROM tickets WHERE status = 'active')  AS invited,
-         (SELECT COUNT(*) FROM check_ins)                        AS attended,
-         (SELECT COUNT(*) FROM tickets WHERE status = 'revoked') AS revoked`,
-    )
-    .first<Counts>();
-  return row ?? { invited: 0, attended: 0, revoked: 0 };
+/** Dashboard figures (PRD F06). One round trip; the door is busy. */
+export async function counts(env: Env): Promise<Counts> {
+  const rows = (await rest(env, "rpc/ticket_counts", { method: "POST", body: "{}" })) as
+    | Counts[]
+    | null;
+  return rows?.[0] ?? { invited: 0, attended: 0, revoked: 0 };
 }
