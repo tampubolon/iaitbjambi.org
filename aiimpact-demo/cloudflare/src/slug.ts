@@ -15,7 +15,7 @@ export const MAX_LEN = 40;
  * assignment, the other refuses to serve. Keep them in sync (design §8.7).
  */
 export const RESERVED = new Set([
-  "aimpact", "www", "api", "mail", "ftp", "admin", "cdn", "smtp", "imap",
+  "aimpact", "tiket", "www", "api", "mail", "ftp", "admin", "cdn", "smtp", "imap",
   "app", "test", "staging", "dev", "static", "assets",
 ]);
 

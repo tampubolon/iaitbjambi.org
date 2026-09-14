@@ -42,3 +42,41 @@ CREATE TABLE IF NOT EXISTS pages (
   html       TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- === Ticketing (PRD "Tiket Event & Akses Pembuat Landing Page", s10) =========
+--
+-- Deliberately separate from `participants`. The PRD's central security point
+-- (s6) is that the QR shown at the door and the credential that unlocks the
+-- builder must be two different secrets, because a ticket photo can be copied
+-- or read over a shoulder. `tickets.builder_code` links the two without
+-- letting either stand in for the other.
+
+CREATE TABLE IF NOT EXISTS tickets (
+  ticket_id    TEXT PRIMARY KEY,
+  name         TEXT NOT NULL,
+  wa_number    TEXT NOT NULL,              -- normalised: 62..., digits only
+  -- Only the hash. The plaintext token lives in the QR and in the one-time
+  -- distribution export; the server never needs it back, and a leaked database
+  -- therefore does not yield working tickets. Re-issuing is an explicit admin
+  -- act that revokes the old token (PRD s4.1).
+  token_hash   TEXT NOT NULL UNIQUE,
+  manual_code  TEXT NOT NULL UNIQUE,       -- readable fallback when the camera fails
+  builder_code TEXT REFERENCES participants (code),
+  status       TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked')),
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS tickets_manual ON tickets (manual_code);
+
+-- One attendance per ticket, enforced by the engine rather than by the
+-- application remembering to check.
+--
+-- ticket_id is the PRIMARY KEY, so "two phones confirm the same ticket at the
+-- same instant" resolves to one INSERT winning and the other conflicting —
+-- which is also what makes a retry after a lost response idempotent rather
+-- than a second attendance (PRD s12).
+CREATE TABLE IF NOT EXISTS check_ins (
+  ticket_id  TEXT PRIMARY KEY REFERENCES tickets (ticket_id),
+  checked_at TEXT NOT NULL DEFAULT (datetime('now')),
+  staff      TEXT NOT NULL
+);

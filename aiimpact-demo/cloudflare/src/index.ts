@@ -1,6 +1,7 @@
 /**
  * Worker entry point. One Worker serves both hostnames; this dispatches.
  *
+ *   tiket.<domain>/            registration: tickets, scanner, attendance
  *   aimpact.<domain>/          builder UI (static assets)
  *   aimpact.<domain>/api/*     handlers
  *   aimpact.<domain>/p/{slug}  a published page, by path
@@ -10,11 +11,13 @@
  * and www continue to resolve to the existing Hostinger site untouched.
  */
 import { handle } from "./api";
+import { handle as handleTiket } from "./tiket";
 import type { Env, QueueMessage } from "./model";
 import { RESERVED } from "./slug";
 import { Store } from "./store";
 
 const APP_LABEL = "aimpact";
+const TICKET_LABEL = "tiket";
 
 function notFound(): Response {
   return new Response("Halaman tidak ditemukan.", {
@@ -47,6 +50,14 @@ export default {
   async fetch(req: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
     const label = url.hostname.toLowerCase().split(".")[0] ?? "";
+
+    // Registration site. Served by this Worker so it shares the database and
+    // the deploy; the ticket and the builder code are rows in one D1, not an
+    // integration between two systems.
+    if (label === TICKET_LABEL) {
+      if (url.pathname.startsWith("/vendor/")) return env.ASSETS.fetch(req);
+      return handleTiket(req, env);
+    }
 
     if (label === APP_LABEL) {
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
