@@ -195,6 +195,20 @@ async function sessionName(
 const staffName = (req: Request, env: Env) => sessionName(req, env, "petugas");
 const adminName = (req: Request, env: Env) => sessionName(req, env, "admin");
 
+/**
+ * Expires a session cookie. Same Path and flags, or the browser treats it as a
+ * different cookie and leaves the original in place.
+ *
+ * This clears the browser's copy; it does not invalidate the signed token,
+ * which stays valid until its sixteen hours are up. That covers what sign-out
+ * is actually for here — handing a phone to someone, or walking away from a
+ * borrowed laptop — but not a token that was captured beforehand. Revoking
+ * those would need server-side session state, which this does not have.
+ */
+function clearCookie(role: string): string {
+  return `${role}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
+}
+
 /** Issues a session cookie whose payload names the role it grants. */
 async function sessionCookie(env: Env, role: string, name: string): Promise<string> {
   const token = await sign(env.SESSION_SECRET, `${role}|${name}`);
@@ -237,6 +251,7 @@ function scanPage(who: string): Response {
         <button id="find" type="button">Cari</button>
       </div>
       <a class="btn ghost" href="/papan">Lihat jumlah hadir</a>
+      <form method="POST" action="/keluar"><button class="ghost" type="submit">Keluar</button></form>
     </div>
     <script src="/vendor/jsQR.js"></script>
     <script>${SCANNER_JS}</script>`,
@@ -372,6 +387,12 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       page,
       cookie: (e: Env, name: string) => sessionCookie(e, "admin", name),
     };
+    if (path === "/admin/keluar" && req.method === "POST") {
+      return new Response(null, {
+        status: 303,
+        headers: { location: "/admin", "set-cookie": clearCookie("admin") },
+      });
+    }
     const who = await adminName(req, env);
     const handled = await admin.handle(req, env, ctx, who, (m?: string) =>
       admin.signInPage(ctx, m ?? ""),
@@ -409,6 +430,13 @@ export async function handle(req: Request, env: Env): Promise<Response> {
         "cache-control": "private, max-age=300",
         "x-robots-tag": "noindex, nofollow",
       },
+    });
+  }
+
+  if (path === "/keluar" && req.method === "POST") {
+    return new Response(null, {
+      status: 303,
+      headers: { location: "/masuk", "set-cookie": clearCookie(STAFF_COOKIE) },
     });
   }
 
