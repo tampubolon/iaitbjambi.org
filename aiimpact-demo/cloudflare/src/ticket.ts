@@ -17,6 +17,7 @@
  * RLS on with no policies and no grants to anon, so this Worker is the only
  * thing that can read participant data (PRD s10).
  */
+import { normalise } from "./code";
 import type { Env, Ticket } from "./model";
 
 /** Raised when Supabase itself is unreachable or rejects the request. */
@@ -64,12 +65,30 @@ export function looksLikeToken(value: string): boolean {
   return /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
 }
 
-/** Normalises what a volunteer typed: lowercase, spaces, stray punctuation. */
+/**
+ * Normalises what a volunteer typed.
+ *
+ * Deliberately the builder's normalise(), not a second one: the same code now
+ * admits a participant at the door and unlocks the builder, so someone who
+ * types O for 0 must get the same answer in both places.
+ */
 export function normaliseCode(code: string): string {
-  return code.toUpperCase().replace(/[^0-9A-Z]/g, "");
+  return normalise(code);
 }
 
-/** check_ins embeds as an array because PostgREST follows the foreign key. */
+interface Attendance {
+  checked_at: string;
+  staff: string;
+}
+
+/**
+ * check_ins.ticket_id is both the primary key and the foreign key, so
+ * PostgREST reads the relationship as one-to-one and embeds a bare OBJECT,
+ * not the array a to-many embed would give. Both shapes are accepted here
+ * because that detection depends on the constraints PostgREST can see, and a
+ * silent shape change would read as "nobody has checked in" — which is the
+ * failure it already caused once.
+ */
 interface Row {
   ticket_id: string;
   name: string;
@@ -77,7 +96,13 @@ interface Row {
   manual_code: string;
   builder_code: string | null;
   status: "active" | "revoked";
-  check_ins: { checked_at: string; staff: string }[] | null;
+  check_ins: Attendance | Attendance[] | null;
+}
+
+/** Normalises either embed shape to the single attendance, or none. */
+export function firstAttendance(embed: Attendance | Attendance[] | null | undefined) {
+  if (!embed) return null;
+  return Array.isArray(embed) ? (embed[0] ?? null) : embed;
 }
 
 const SELECT =
@@ -86,7 +111,7 @@ const SELECT =
 function toTicket(rows: unknown): Ticket | null {
   const row = Array.isArray(rows) ? (rows[0] as Row | undefined) : undefined;
   if (!row) return null;
-  const seen = row.check_ins?.[0];
+  const seen = firstAttendance(row.check_ins);
   return {
     ticket_id: row.ticket_id,
     name: row.name,

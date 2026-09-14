@@ -81,6 +81,7 @@ h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 10px;color:var(--m
 .name{font-size:26px;font-weight:700;line-height:1.2;margin:2px 0 14px}
 .qr{background:#fff;padding:12px;border-radius:10px;display:block;margin:0 auto;width:min(300px,78vw)}
 .qr svg{display:block;width:100%;height:auto}
+.code.bld{color:var(--brand)}
 .code{font:700 26px/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.14em;
 text-align:center;padding:12px;background:var(--bg);border-radius:10px;margin-top:6px}
 .meta{color:var(--muted);font-size:14px;margin:2px 0}
@@ -116,8 +117,9 @@ function eventLine(env: Env): string {
 function ticketPage(t: Ticket, token: string, env: Env): Response {
   const url = `https://tiket.${env.DOMAIN}/t/${token}`;
   const already = t.checked_at
-    ? `<div class="res warn"><b>Sudah check-in</b>${esc(wib(t.checked_at))} WIB</div>`
+    ? `<div class="res ok"><b>Sudah check-in</b>${esc(wib(t.checked_at))} WIB</div>`
     : "";
+
 
   return page(
     `Tiket — ${t.name}`,
@@ -129,12 +131,19 @@ function ticketPage(t: Ticket, token: string, env: Env): Response {
         ${eventLine(env)}
         <div class="qr">${svg(url, 300)}</div>
         <p class="hint" style="text-align:center">Tunjukkan QR ini di meja registrasi.</p>
-        <h2 style="margin-top:18px">Kode cadangan</h2>
+        <h2 style="margin-top:18px">Kode Anda</h2>
         <div class="code">${esc(t.manual_code)}</div>
-        <p class="hint">Sebutkan kode ini jika kamera panitia bermasalah.</p>
+        <p class="hint">Satu kode untuk dua hal: sebutkan di meja registrasi
+        jika kamera bermasalah, dan masukkan di AIMPACT untuk membuat website
+        usaha Anda.</p>
         <a class="btn" href="/qr/${esc(token)}.png" download="tiket-qr.png">Simpan gambar QR</a>
         <p class="hint">Simpan sekarang supaya tidak perlu sinyal saat antre.
         Tiket ini hanya untuk Anda dan tidak dapat dipindahtangankan.</p>
+      </div>
+      <div class="card">
+        <h2>Setelah registrasi</h2>
+        <p class="meta">Buat website usaha Anda dengan AI, pakai kode yang sama.</p>
+        <a class="btn" href="https://aimpact.${env.DOMAIN}/">Buka AIMPACT</a>
       </div>
     </div>`,
   );
