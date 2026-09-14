@@ -149,7 +149,10 @@ const issued = good.map((p, i) => {
     ticket_id: `tk_${token(12).toLowerCase()}`,
     tok,
     hash: sha256(tok),
-    manual: token(10),
+    // One code for both doors: the participant types this at registration if
+    // the camera fails, and again at the builder. Two codes on one slip was a
+    // question the desk would have had to answer 200 times.
+    manual: builderCodes[i] ?? token(10),
     builder: builderCodes[i] ?? null,
     url: `https://tiket.${DOMAIN}/t/${tok}`,
   };
@@ -173,7 +176,8 @@ writeFileSync(
 const message = (t) =>
   `Halo ${t.name}, Anda terpilih mengikuti ${EVENT.name}, ${EVENT.date} di ${EVENT.place}. ` +
   `Tiket: ${t.url} Simpan gambar QR dan siapkan saat registrasi. ` +
-  `Kode cadangan: ${t.manual}. Tiket hanya untuk Anda.`;
+  `Kode Anda: ${t.manual} (untuk registrasi dan untuk membuat website). ` +
+  `Tiket hanya untuk Anda.`;
 
 const csvCell = (s) => `"${String(s).replace(/"/g, '""')}"`;
 writeFileSync(
@@ -209,6 +213,9 @@ writeFileSync(
 
 // Printed slips. 8 to an A4 page, cut lines between, QR big enough to scan
 // off paper as well as off a phone.
+// Two codes, and they do different jobs — the top one gets you through the
+// door, the bottom one builds your page. They are labelled rather than merely
+// printed, because an unlabelled pair of codes is a queue-forming question.
 const slip = (t) => `
   <div class="slip">
     <div class="qr">${svg(t.url, 150)}</div>
@@ -216,8 +223,9 @@ const slip = (t) => `
       <div class="ev">${EVENT.name}</div>
       <div class="nm">${t.name.replace(/[&<>]/g, "")}</div>
       <div class="dt">${EVENT.date} · ${EVENT.place}</div>
+      <div class="lbl">Kode registrasi &amp; AIMPACT</div>
       <div class="cd">${t.manual}</div>
-      <div class="note">Tunjukkan QR ini di meja registrasi</div>
+      <div class="note">aimpact.iaitbjambi.org</div>
     </div>
   </div>`;
 
@@ -227,14 +235,15 @@ writeFileSync(
   @page{size:A4;margin:10mm}
   body{font:12px/1.35 system-ui,sans-serif;margin:0}
   .sheet{display:grid;grid-template-columns:1fr 1fr;gap:0}
-  .slip{display:flex;gap:10px;align-items:center;padding:8mm 6mm;height:34mm;
+  .slip{display:flex;gap:10px;align-items:center;padding:8mm 6mm;height:36mm;
         border:1px dashed #bbb;break-inside:avoid}
   .qr{width:30mm;flex:none}.qr svg{display:block;width:100%;height:auto}
   .ev{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#555}
   .nm{font-size:15px;font-weight:700;line-height:1.15;margin:2px 0}
   .dt{font-size:10px;color:#555}
-  .cd{font:700 15px ui-monospace,monospace;letter-spacing:.12em;margin-top:4px}
-  .note{font-size:9px;color:#777;margin-top:3px}
+  .lbl{font-size:8px;letter-spacing:.06em;text-transform:uppercase;color:#777;margin-top:5px}
+  .cd{font:700 20px ui-monospace,monospace;letter-spacing:.16em}
+  .note{font-size:9px;color:#777;margin-top:2px}
   @media print{.slip{border-color:#ddd}}
   </style><div class="sheet">${issued.map(slip).join("")}</div>`,
 );

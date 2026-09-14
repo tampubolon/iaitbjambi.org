@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { png, svg } from "../src/qr";
-import { hashToken, looksLikeToken } from "../src/ticket";
+import { firstAttendance, hashToken, looksLikeToken } from "../src/ticket";
 import { wib } from "../src/tiket";
 
 const URL = "https://tiket.iaitbjambi.org/t/3ZQ8K2M7V4XB9NRTC5WJ0HFDPY";
@@ -100,5 +100,25 @@ describe("wib", () => {
 
   it("passes anything unparseable straight through rather than showing NaN", () => {
     expect(wib("not a date")).toBe("not a date");
+  });
+});
+
+describe("firstAttendance", () => {
+  const seen = { checked_at: "2026-09-14T17:35:36+00:00", staff: "Petugas Meja" };
+
+  it("reads the one-to-one object PostgREST actually returns", () => {
+    // check_ins.ticket_id is PK and FK, so the embed is an object, not an
+    // array. Treating it as an array read every ticket as "not checked in".
+    expect(firstAttendance(seen)).toEqual(seen);
+  });
+
+  it("still reads an array, in case the relationship is detected as to-many", () => {
+    expect(firstAttendance([seen])).toEqual(seen);
+  });
+
+  it("returns null for no attendance", () => {
+    expect(firstAttendance(null)).toBeNull();
+    expect(firstAttendance([])).toBeNull();
+    expect(firstAttendance(undefined)).toBeNull();
   });
 });
