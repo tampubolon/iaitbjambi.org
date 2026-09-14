@@ -90,6 +90,39 @@ function row(t: tickets.Found, c: Ctx, query: string): string {
   </div>`;
 }
 
+/**
+ * The override control.
+ *
+ * Deliberately loud when it is on. The danger with a switch like this is not
+ * flipping it during an emergency — it is nobody remembering it is still on
+ * afterwards, so the state is a banner rather than a checkbox.
+ */
+function labSwitch(c: Ctx, open: boolean): string {
+  return open
+    ? `<div class="card" style="border:2px solid #a06a00;background:#fdf4e0">
+        <div class="nm" style="color:#6d4800">Lab terbuka untuk semua</div>
+        <p class="meta">Peserta bisa memakai AIMPACT tanpa check-in.
+        Kembalikan ke normal setelah scanner berfungsi lagi.</p>
+        <form method="POST" action="/admin/lab" class="act">
+          <input type="hidden" name="open" value="0">
+          <input name="reason" placeholder="Alasan menutup" required
+                 style="text-transform:none;letter-spacing:0;font-size:14px;text-align:left">
+          <button type="submit">Wajibkan check-in lagi</button>
+        </form>
+      </div>`
+    : `<div class="card">
+        <h2>Akses lab</h2>
+        <p class="meta">Saat ini peserta harus check-in dulu sebelum bisa
+        memakai AIMPACT. Buka untuk semua hanya jika scanner bermasalah.</p>
+        <form method="POST" action="/admin/lab" class="act">
+          <input type="hidden" name="open" value="1">
+          <input name="reason" placeholder="Alasan membuka" required
+                 style="text-transform:none;letter-spacing:0;font-size:14px;text-align:left">
+          <button class="danger" type="submit">Buka lab untuk semua</button>
+        </form>
+      </div>`;
+}
+
 export function dashboard(
   c: Ctx,
   who: string,
@@ -97,6 +130,7 @@ export function dashboard(
   query: string,
   results: tickets.Found[],
   notice = "",
+  labIsOpen = false,
 ): Response {
   const list = query
     ? results.length
@@ -117,6 +151,7 @@ export function dashboard(
         </div>
       </div>
       ${notice}
+      ${labSwitch(c, labIsOpen)}
       <div class="card">
         <h2>Cari peserta</h2>
         <form method="GET" action="/admin">
@@ -213,6 +248,12 @@ export async function handle(
       } else if (path === "/admin/undo") {
         await tickets.undoCheckIn(env, id, who, reason);
         notice = "Check-in dibatalkan.";
+      } else if (path === "/admin/lab") {
+        const open = String(form.get("open") ?? "") === "1";
+        await tickets.setLabOpen(env, open, who, reason);
+        notice = open
+          ? "Lab dibuka untuk semua peserta."
+          : "Lab kembali membutuhkan check-in.";
       } else if (path === "/admin/admit") {
         await tickets.adminAdmit(env, id, who, reason);
         notice = "Ditandai hadir.";
@@ -248,12 +289,10 @@ export async function handle(
         message,
       )}</b></div>`
     : "";
-  return dashboard(
-    c,
-    who,
-    await tickets.counts(env),
-    query,
-    query ? await tickets.search(env, query) : [],
-    notice,
-  );
+  const [counts, labIsOpen, results] = await Promise.all([
+    tickets.counts(env),
+    tickets.labOpen(env),
+    query ? tickets.search(env, query) : Promise.resolve([]),
+  ]);
+  return dashboard(c, who, counts, query, results, notice, labIsOpen);
 }
