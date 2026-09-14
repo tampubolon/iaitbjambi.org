@@ -31,10 +31,17 @@ ANTHROPIC_MODEL = "claude-haiku-4-5"
 # load-balancing tier: Anthropic is asked first every time. See src/deepseek.ts.
 DEEPSEEK_MODEL = "deepseek-chat"
 
+# Ticketing lives in Supabase Postgres; the builder still uses D1. The URL is
+# not a secret -- the service_role key that goes with it is, and the tables
+# have RLS on with no policies so the anon key reaches nothing.
+SUPABASE_URL = "https://lkjmymzxjnojbwvfpocm.supabase.co"
+
 # Secrets, set with `wrangler secret put <NAME>`, never in this file:
 #   ANTHROPIC_API_KEY
 #   SESSION_SECRET
 #   DEEPSEEK_API_KEY  (optional; without it the fallback is simply off)
+#   STAFF_PASSWORD    (check-in staff sign-in)
+#   SUPABASE_SERVICE_KEY
 
 [[d1_databases]]
 binding       = "DB"

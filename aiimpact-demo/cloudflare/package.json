@@ -10,7 +10,8 @@
     "deploy": "npm run check && wrangler deploy",
     "db:apply": "wrangler d1 execute aimpact --file=./schema.sql --remote",
     "check:config": "node check-config.mjs",
-    "db:tickets": "wrangler d1 execute aimpact --file=./out/tickets.sql --remote"
+    "db:schema": "psql -h db.lkjmymzxjnojbwvfpocm.supabase.co -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/schema.sql",
+    "db:tickets": "psql -h db.lkjmymzxjnojbwvfpocm.supabase.co -U postgres -d postgres -v ON_ERROR_STOP=1 -f out/tickets.sql"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.22.0",

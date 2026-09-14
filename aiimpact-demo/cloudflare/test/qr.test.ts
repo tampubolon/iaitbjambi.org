@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { png, svg } from "../src/qr";
 import { hashToken, looksLikeToken } from "../src/ticket";
+import { wib } from "../src/tiket";
 
 const URL = "https://tiket.iaitbjambi.org/t/3ZQ8K2M7V4XB9NRTC5WJ0HFDPY";
 
@@ -83,5 +84,21 @@ describe("hashToken", () => {
     expect(await hashToken("abc")).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
+  });
+});
+
+describe("wib", () => {
+  it("renders a Postgres UTC timestamp as Jakarta wall-clock time", () => {
+    // 16:56 UTC is 23:56 in WIB (UTC+7). Labelling the raw UTC string "WIB"
+    // would be wrong by seven hours.
+    expect(wib("2026-09-14T16:56:22.792504+00:00")).toBe("23.56.22");
+  });
+
+  it("rolls the date correctly across midnight WIB", () => {
+    expect(wib("2026-09-14T17:30:00+00:00")).toBe("00.30.00");
+  });
+
+  it("passes anything unparseable straight through rather than showing NaN", () => {
+    expect(wib("not a date")).toBe("not a date");
   });
 });
