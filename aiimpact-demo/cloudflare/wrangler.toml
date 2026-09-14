@@ -26,9 +26,15 @@ DOMAIN = "iaitbjambi.org"
 MAX_GENERATIONS = "15"
 ANTHROPIC_MODEL = "claude-haiku-4-5"
 
+# Fallback provider, reached only when Anthropic cannot answer a request -- an
+# empty credit balance, a 429 that outlived its retries, a 5xx. Not a
+# load-balancing tier: Anthropic is asked first every time. See src/deepseek.ts.
+DEEPSEEK_MODEL = "deepseek-chat"
+
 # Secrets, set with `wrangler secret put <NAME>`, never in this file:
 #   ANTHROPIC_API_KEY
 #   SESSION_SECRET
+#   DEEPSEEK_API_KEY  (optional; without it the fallback is simply off)
 
 [[d1_databases]]
 binding       = "DB"
