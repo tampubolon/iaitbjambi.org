@@ -34,6 +34,29 @@ export interface Env {
   /** Fallback provider. Absent means Anthropic only — see deepseek.ts. */
   DEEPSEEK_API_KEY?: string;
   DEEPSEEK_MODEL?: string;
+  /** Shared password for the check-in staff pages. */
+  STAFF_PASSWORD?: string;
+  EVENT_NAME?: string;
+  EVENT_DATE?: string;
+  EVENT_PLACE?: string;
+}
+
+/** A ticket joined to its attendance row, if any. */
+export interface Ticket {
+  ticket_id: string;
+  name: string;
+  wa_number: string;
+  manual_code: string;
+  builder_code: string | null;
+  status: "active" | "revoked";
+  checked_at: string | null;
+  checked_by: string | null;
+}
+
+/** Raw shape of the tickets/check_ins join, before nulls are normalised. */
+export interface TicketRow extends Omit<Ticket, "checked_at" | "checked_by"> {
+  checked_at?: string | null;
+  checked_by?: string | null;
 }
 
 export interface QueueMessage {
