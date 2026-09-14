@@ -177,3 +177,29 @@ export async function counts(env: Env): Promise<Counts> {
     | null;
   return rows?.[0] ?? { invited: 0, attended: 0, revoked: 0 };
 }
+
+/**
+ * Reports whether the holder of this builder code has been admitted at the
+ * door, which is what gates access to the builder.
+ *
+ * Fails CLOSED. A code with no ticket, a revoked ticket, or no attendance row
+ * is refused, and so is a Supabase outage — the caller lets StoreError
+ * propagate rather than catching it into a yes. The alternative, opening the
+ * builder whenever the check cannot be made, would mean the gate is absent
+ * exactly when the system is least healthy. If Supabase is down nobody can be
+ * checked in either, so the event is already stopped; this does not make it
+ * worse.
+ *
+ * @throws StoreError when Supabase cannot be reached or rejects the query.
+ */
+export async function admitted(env: Env, builderCode: string): Promise<boolean> {
+  const clean = normalise(builderCode);
+  if (!clean) return false;
+  const rows = (await rest(
+    env,
+    `tickets?builder_code=eq.${clean}&status=eq.active&select=ticket_id,check_ins(checked_at)`,
+  )) as { check_ins: unknown }[] | null;
+
+  const row = Array.isArray(rows) ? rows[0] : undefined;
+  return Boolean(row && firstAttendance(row.check_ins as never));
+}
