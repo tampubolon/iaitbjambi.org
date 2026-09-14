@@ -91,15 +91,14 @@ function row(t: tickets.Found, c: Ctx, query: string): string {
 }
 
 /**
- * The override control.
+ * Banner shown while the lab is open to everyone.
  *
- * Deliberately loud when it is on. The danger with a switch like this is not
- * flipping it during an emergency — it is nobody remembering it is still on
- * afterwards, so the state is a banner rather than a checkbox.
+ * Stays at the top of the page. The danger with an override is not flipping it
+ * during an emergency — it is nobody remembering it is still on afterwards, so
+ * the live state is the first thing on the screen, with its own way back.
  */
-function labSwitch(c: Ctx, open: boolean): string {
-  return open
-    ? `<div class="card" style="border:2px solid #a06a00;background:#fdf4e0">
+function labOpenBanner(c: Ctx): string {
+  return `<div class="card" style="border:2px solid #a06a00;background:#fdf4e0">
         <div class="nm" style="color:#6d4800">Lab terbuka untuk semua</div>
         <p class="meta">Peserta bisa memakai AIMPACT tanpa check-in.
         Kembalikan ke normal setelah scanner berfungsi lagi.</p>
@@ -109,8 +108,18 @@ function labSwitch(c: Ctx, open: boolean): string {
                  style="text-transform:none;letter-spacing:0;font-size:14px;text-align:left">
           <button type="submit">Wajibkan check-in lagi</button>
         </form>
-      </div>`
-    : `<div class="card">
+      </div>`;
+}
+
+/**
+ * The control that opens the lab, kept at the very bottom of the page.
+ *
+ * It is a break-glass lever used when the scanner fails, not something anyone
+ * needs while searching for a participant — so it does not sit above the
+ * search box being used every thirty seconds.
+ */
+function labOpenControl(c: Ctx): string {
+  return `<div class="card">
         <h2>Akses lab</h2>
         <p class="meta">Saat ini peserta harus check-in dulu sebelum bisa
         memakai AIMPACT. Buka untuk semua hanya jika scanner bermasalah.</p>
@@ -151,7 +160,7 @@ export function dashboard(
         </div>
       </div>
       ${notice}
-      ${labSwitch(c, labIsOpen)}
+      ${labIsOpen ? labOpenBanner(c) : ""}
       <div class="card">
         <h2>Cari peserta</h2>
         <form method="GET" action="/admin">
@@ -164,6 +173,7 @@ export function dashboard(
       <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
       <a class="btn ghost" href="/admin/log">Riwayat tindakan admin</a>
       <a class="btn ghost" href="/scan">Buka scanner</a>
+      ${labIsOpen ? "" : labOpenControl(c)}
     </div>`,
   );
 }
