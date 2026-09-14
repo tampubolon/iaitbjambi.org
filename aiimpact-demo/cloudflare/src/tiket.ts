@@ -20,6 +20,7 @@
 import type { Env, Ticket } from "./model";
 import { png, svg } from "./qr";
 import { sign, verify } from "./auth";
+import * as admin from "./admin";
 import * as tickets from "./ticket";
 
 const PRIVATE = {
@@ -100,6 +101,16 @@ video{width:100%;border-radius:12px;background:#000;display:block}
 .bad{background:#fdeceb;border-color:var(--bad);color:#8c1d18}
 .grey{background:#eef1f5;border-color:#94a3b5;color:#3c4a5c}
 .big{font-size:40px;font-weight:700;line-height:1}
+.nm{font-size:18px;font-weight:700;line-height:1.2}
+.tags{margin:6px 0 10px}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:3px 9px;border-radius:99px;
+background:#eef1f5;color:#3c4a5c;margin-right:5px}
+.tag.ok{background:#e8f6ee;color:#0d5c34}
+.tag.bad{background:#fdeceb;color:#8c1d18}
+.act{display:flex;gap:7px;margin-top:7px}
+.act input{flex:1;font-size:14px;padding:9px}
+.act button{width:auto;flex:none;margin-top:0;padding:9px 13px;font-size:14px;white-space:nowrap}
+.act button.danger{background:#b3261e}
 .row{display:flex;gap:10px}.row>div{flex:1;text-align:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px}
 `;
@@ -153,17 +164,44 @@ function ticketPage(t: Ticket, token: string, env: Env): Response {
 
 const STAFF_COOKIE = "petugas";
 
-async function staffName(req: Request, env: Env): Promise<string | null> {
+/**
+ * Reads a signed session cookie and returns the holder's name.
+ *
+ * The role is part of the signed payload, not just the cookie name. Both
+ * cookies are signed with the same secret, so without binding the role a
+ * volunteer could rename their `petugas` cookie to `admin` and be an admin —
+ * the signature would still verify.
+ */
+async function sessionName(
+  req: Request,
+  env: Env,
+  role: "petugas" | "admin",
+): Promise<string | null> {
   const raw = req.headers.get("cookie") ?? "";
-  const hit = new RegExp(`(?:^|;\\s*)${STAFF_COOKIE}=([^;]+)`).exec(raw);
+  const hit = new RegExp(`(?:^|;\\s*)${role}=([^;]+)`).exec(raw);
   if (!hit || !env.SESSION_SECRET) return null;
   try {
     // verify() throws on a bad or expired signature; at the door that is just
     // "sign in again", not a 500.
-    return await verify(env.SESSION_SECRET, decodeURIComponent(hit[1]!));
+    const subject = await verify(env.SESSION_SECRET, decodeURIComponent(hit[1]!));
+    const sep = subject.indexOf("|");
+    if (sep < 1 || subject.slice(0, sep) !== role) return null;
+    return subject.slice(sep + 1);
   } catch {
     return null;
   }
+}
+
+const staffName = (req: Request, env: Env) => sessionName(req, env, "petugas");
+const adminName = (req: Request, env: Env) => sessionName(req, env, "admin");
+
+/** Issues a session cookie whose payload names the role it grants. */
+async function sessionCookie(env: Env, role: string, name: string): Promise<string> {
+  const token = await sign(env.SESSION_SECRET, `${role}|${name}`);
+  return (
+    `${role}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; ` +
+    `SameSite=Lax; Max-Age=57600`
+  );
 }
 
 function signIn(message = ""): Response {
@@ -325,6 +363,22 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const path = url.pathname;
 
+  // Admin first: its own password, its own cookie, its own role inside the
+  // signature. A volunteer's scanner session is not an admin session.
+  if (path.startsWith("/admin")) {
+    const ctx = {
+      esc,
+      wib,
+      page,
+      cookie: (e: Env, name: string) => sessionCookie(e, "admin", name),
+    };
+    const who = await adminName(req, env);
+    const handled = await admin.handle(req, env, ctx, who, (m?: string) =>
+      admin.signInPage(ctx, m ?? ""),
+    );
+    if (handled) return handled;
+  }
+
   // Ticket, by token. GET only and side-effect free: opening a ticket link,
   // or WhatsApp fetching a preview of it, must never admit anyone.
   const t = /^\/t\/([0-9A-HJKMNP-TV-Z]{26})\/?$/.exec(path);
@@ -368,14 +422,11 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       if (!env.STAFF_PASSWORD || pass !== env.STAFF_PASSWORD || !name) {
         return signIn("Nama atau kata sandi salah.");
       }
-      const token = await sign(env.SESSION_SECRET, name);
       return new Response(null, {
         status: 303,
         headers: {
           location: "/scan",
-          "set-cookie":
-            `${STAFF_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Secure; ` +
-            `SameSite=Lax; Max-Age=57600`,
+          "set-cookie": await sessionCookie(env, STAFF_COOKIE, name),
         },
       });
     }

@@ -203,3 +203,129 @@ export async function admitted(env: Env, builderCode: string): Promise<boolean> 
   const row = Array.isArray(rows) ? rows[0] : undefined;
   return Boolean(row && firstAttendance(row.check_ins as never));
 }
+
+// --- admin -------------------------------------------------------------
+
+export interface Found extends Ticket {
+  is_staff: boolean;
+}
+
+/**
+ * Finds participants by name or code, for the help desk.
+ *
+ * Matches a code exactly or a name loosely, because the two questions asked at
+ * a help desk are "here is my code" and "I think I am on the list".
+ * Deliberately capped: this is a lookup, not a way to page the whole list out
+ * of the building.
+ */
+export async function search(env: Env, query: string, limit = 25): Promise<Found[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const code = normalise(q);
+  const like = encodeURIComponent(`*${q.replace(/[*,()]/g, "")}*`);
+  const filter = `or=(manual_code.eq.${code},builder_code.eq.${code},name.ilike.${like})`;
+  const rows = (await rest(
+    env,
+    `tickets?${filter}&select=ticket_id,name,wa_number,manual_code,builder_code,status,is_staff,` +
+      `check_ins(checked_at,staff)&order=name.asc&limit=${limit}`,
+  )) as (Row & { is_staff: boolean })[] | null;
+
+  return (rows ?? []).map((row) => {
+    const seen = firstAttendance(row.check_ins);
+    return {
+      ticket_id: row.ticket_id,
+      name: row.name,
+      wa_number: row.wa_number,
+      manual_code: row.manual_code,
+      builder_code: row.builder_code,
+      status: row.status,
+      is_staff: row.is_staff,
+      checked_at: seen?.checked_at ?? null,
+      checked_by: seen?.staff ?? null,
+    };
+  });
+}
+
+/** Revokes or restores a ticket. The reason is recorded, not optional. */
+export async function setStatus(
+  env: Env,
+  ticketId: string,
+  status: "active" | "revoked",
+  actor: string,
+  reason: string,
+): Promise<void> {
+  await rest(env, "rpc/admin_set_status", {
+    method: "POST",
+    body: JSON.stringify({
+      p_ticket_id: ticketId,
+      p_status: status,
+      p_actor: actor,
+      p_reason: reason,
+    }),
+  });
+}
+
+/** Removes an attendance record — the PRD's "koreksi check-in" (F10). */
+export async function undoCheckIn(
+  env: Env,
+  ticketId: string,
+  actor: string,
+  reason: string,
+): Promise<void> {
+  await rest(env, "rpc/admin_undo_check_in", {
+    method: "POST",
+    body: JSON.stringify({ p_ticket_id: ticketId, p_actor: actor, p_reason: reason }),
+  });
+}
+
+/** Marks a participant present by hand, with a reason, audited (PRD F10). */
+export async function adminAdmit(
+  env: Env,
+  ticketId: string,
+  actor: string,
+  reason: string,
+): Promise<void> {
+  await rest(env, "rpc/admin_admit", {
+    method: "POST",
+    body: JSON.stringify({ p_ticket_id: ticketId, p_actor: actor, p_reason: reason }),
+  });
+}
+
+export interface AuditEntry {
+  at: string;
+  actor: string;
+  action: string;
+  reason: string;
+  detail: string | null;
+}
+
+/** Recent admin actions, newest first. */
+export async function audit(env: Env, limit = 50): Promise<AuditEntry[]> {
+  return ((await rest(
+    env,
+    `audit_logs?select=at,actor,action,reason,detail&order=at.desc&limit=${limit}`,
+  )) ?? []) as AuditEntry[];
+}
+
+/** Every ticket, for the attendance export (F09). */
+export async function all(env: Env): Promise<Found[]> {
+  const rows = (await rest(
+    env,
+    `tickets?is_staff=is.false&select=ticket_id,name,wa_number,manual_code,builder_code,status,` +
+      `is_staff,check_ins(checked_at,staff)&order=name.asc&limit=1000`,
+  )) as (Row & { is_staff: boolean })[] | null;
+  return (rows ?? []).map((row) => {
+    const seen = firstAttendance(row.check_ins);
+    return {
+      ticket_id: row.ticket_id,
+      name: row.name,
+      wa_number: row.wa_number,
+      manual_code: row.manual_code,
+      builder_code: row.builder_code,
+      status: row.status,
+      is_staff: row.is_staff,
+      checked_at: seen?.checked_at ?? null,
+      checked_by: seen?.staff ?? null,
+    };
+  });
+}
