@@ -66,7 +66,8 @@ function page(title: string, body: string, extraHead = ""): Response {
     `<!doctype html><html lang="id"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>${esc(title)}</title><style>${CSS}</style>${extraHead}</head><body>${body}</body></html>`,
+<title>${esc(title)}</title><style>${CSS}</style>${extraHead}</head><body>${body}
+<footer class="cr">Developed by IA ITB Pengda Jambi</footer></body></html>`,
     { headers: PRIVATE },
   );
 }
@@ -157,6 +158,7 @@ color:var(--muted);margin-top:2px}
 td.code{font:700 12.5px ui-monospace,monospace;letter-spacing:.06em;color:var(--brand);width:14%}
 td.link a{color:var(--muted);font-size:11px;line-height:1.35}
 td.st .tag{display:inline-block;margin:0 3px 3px 0;font-size:11px;padding:2px 7px}
+footer.cr{text-align:center;color:var(--muted);font-size:12px;padding:18px 16px 26px}
 .row{display:flex;gap:10px}.row>div{flex:1;text-align:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px}
 `;
