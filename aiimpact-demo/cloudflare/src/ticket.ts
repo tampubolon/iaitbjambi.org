@@ -356,6 +356,18 @@ export async function all(env: Env, includeStaff = false): Promise<Found[]> {
 }
 
 /**
+ * Plaintext ticket tokens, keyed by code, so an admin can re-send someone's
+ * ticket link when they lose the WhatsApp message.
+ *
+ * The tickets table stores only the SHA-256 of these, so a leaked tickets
+ * table still yields no working tickets. This map is the deliberate exception
+ * the PRD allows for re-sending (s4.1), and it lives in `settings` where the
+ * same RLS and service_role-only access apply. The same values are already in
+ * out/tokens.txt and the distribution sheet; this is one more copy of a secret
+ * that already exists, not a new class of exposure.
+ */
+
+/**
  * Codes marked as panitia, for the "Keterangan" column.
  *
  * Kept as data in `settings` rather than a column on tickets, because adding
@@ -363,6 +375,21 @@ export async function all(env: Env, includeStaff = false): Promise<Found[]> {
  * also means the list can be corrected without a deploy — which is the more
  * useful property on the day.
  */
+export async function ticketTokens(env: Env): Promise<Map<string, string>> {
+  try {
+    const rows = (await rest(env, "settings?key=eq.ticket_tokens&select=value")) as
+      | { value: string }[]
+      | null;
+    const raw = rows?.[0]?.value;
+    if (!raw) return new Map();
+    return new Map(Object.entries(JSON.parse(raw) as Record<string, string>));
+  } catch {
+    // No map means the admin list shows no ticket links, which is a missing
+    // convenience rather than a broken page.
+    return new Map();
+  }
+}
+
 export async function panitiaCodes(env: Env): Promise<Set<string>> {
   try {
     const rows = (await rest(env, "settings?key=eq.panitia_codes&select=value")) as

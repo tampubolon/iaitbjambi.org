@@ -117,19 +117,23 @@ background:#eef1f5;color:#3c4a5c;margin-right:5px}
 .tab{font-size:13px;font-weight:600;padding:7px 11px;border-radius:99px;
 background:#eef1f5;color:#3c4a5c;text-decoration:none}
 .tab.on{background:var(--brand);color:#fff}
-.plist{padding:0;overflow:hidden}
-/* The table is wider than a phone; it scrolls inside its own box rather than
-   making the whole page scroll sideways. */
-.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-table{border-collapse:collapse;width:100%;font-size:13px}
-th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
-th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
-position:sticky;top:0;background:var(--card)}
+.plist{padding:0}
+/* No sideways scrolling: every cell wraps and the table fits whatever width
+   the phone has. Long URLs break mid-string rather than forcing the page
+   wider than the screen. */
+table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12.5px}
+th,td{padding:8px 7px;text-align:left;border-bottom:1px solid var(--line);
+vertical-align:top;overflow-wrap:anywhere;word-break:break-word}
+th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 tbody tr:last-child td{border-bottom:0}
 tbody tr:nth-child(even){background:#fafbfc}
-td.num,th.num{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;width:1%}
-td.code{font:700 13px ui-monospace,monospace;letter-spacing:.1em;color:var(--brand)}
-td.site a{color:var(--muted);font-size:12px}
+td.num,th.num{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;width:8%}
+td.pname{font-weight:700}
+.ket{font-weight:600;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;
+color:var(--muted);margin-top:2px}
+td.code{font:700 12.5px ui-monospace,monospace;letter-spacing:.06em;color:var(--brand);width:14%}
+td.link a{color:var(--muted);font-size:11px;line-height:1.35}
+td.st .tag{display:inline-block;margin:0 3px 3px 0;font-size:11px;padding:2px 7px}
 .row{display:flex;gap:10px}.row>div{flex:1;text-align:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px}
 `;
