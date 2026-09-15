@@ -194,6 +194,7 @@ export function listPage(
   rows: tickets.Found[],
   sites: Map<string, { slug: string | null; built: boolean }>,
   panitia: Set<string>,
+  tokens: Map<string, string>,
   filter: string,
   domain: string,
 ): Response {
@@ -210,31 +211,39 @@ export function listPage(
 
   // Numbered within the current filter, so "row 83" means the 83rd of what is
   // on screen rather than a position in a list nobody is looking at.
+  // Numbered within the current filter, so "row 83" means the 83rd of what is
+  // on screen rather than a position in a list nobody is looking at.
+  //
+  // Six columns, and every cell wraps. An earlier version scrolled sideways
+  // inside its own box, which reads badly on a phone held one-handed at a
+  // registration desk — the two status columns are merged instead.
   const body = shown
     .map((t, i) => {
       const site = sites.get(t.manual_code);
       const host = site?.slug ? `${site.slug}.${domain}` : null;
+      const tok = tokens.get(t.manual_code);
       return `<tr>
         <td class="num">${i + 1}</td>
-        <td>${c.esc(t.name)}</td>
+        <td class="pname">${c.esc(t.name)}<div class="ket">${
+          panitia.has(t.manual_code) ? "Panitia" : "Peserta"
+        }</div></td>
         <td class="code">${c.esc(t.manual_code)}</td>
-        <td class="site">${
+        <td class="link">${
+          tok
+            ? `<a href="https://tiket.${domain}/t/${c.esc(tok)}" target="_blank" rel="noopener">tiket.${domain}/t/${c.esc(tok)}</a>`
+            : `<span class="meta">-</span>`
+        }</td>
+        <td class="link">${
           host
             ? `<a href="https://${c.esc(host)}" target="_blank" rel="noopener">${c.esc(host)}</a>`
             : `<span class="meta">-</span>`
         }</td>
-        <td>${
+        <td class="st">${
           t.checked_at
-            ? `<span class="tag ok">${c.esc(c.wib(t.checked_at))}</span>`
-            : `<span class="tag">belum</span>`
-        }</td>
-        <td>${
-          site?.built ? `<span class="tag ok">jadi</span>` : `<span class="tag">belum</span>`
-        }</td>
-        <td>${
-          panitia.has(t.manual_code)
-            ? `<span class="tag brand">Panitia</span>`
-            : `<span class="meta">Peserta</span>`
+            ? `<span class="tag ok">hadir ${c.esc(c.wib(t.checked_at))}</span>`
+            : `<span class="tag">belum hadir</span>`
+        }${
+          site?.built ? `<span class="tag ok">web jadi</span>` : ""
         }</td>
       </tr>`;
     })
@@ -256,11 +265,11 @@ export function listPage(
       <div class="card plist">
         ${
           shown.length
-            ? `<div class="scroll"><table>
+            ? `<table>
                  <thead><tr><th class="num">#</th><th>Nama</th><th>Kode</th>
-                 <th>Website</th><th>Hadir</th><th>Web</th><th>Keterangan</th></tr></thead>
+                 <th>Link tiket</th><th>Website</th><th>Status</th></tr></thead>
                  <tbody>${body}</tbody>
-               </table></div>`
+               </table>`
             : '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'
         }
       </div>
@@ -338,12 +347,14 @@ export async function handle(
   if (path === "/admin/log") return auditPage(c, await tickets.audit(env));
 
   if (path === "/admin/peserta") {
-    const [rows, sites, panitia] = await Promise.all([
+    const [rows, sites, panitia, tokens] = await Promise.all([
       tickets.all(env, true),
       new Store(env.DB).siteIndex(),
       tickets.panitiaCodes(env),
+      tickets.ticketTokens(env),
     ]);
-    return listPage(c, rows, sites, panitia, url.searchParams.get("f") ?? "semua", env.DOMAIN);
+    return listPage(c, rows, sites, panitia, tokens,
+      url.searchParams.get("f") ?? "semua", env.DOMAIN);
   }
 
   if (req.method === "POST") {
