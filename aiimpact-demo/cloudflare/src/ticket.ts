@@ -439,6 +439,42 @@ export async function attended(env: Env, limit = 250): Promise<Attended[]> {
     }));
 }
 
+/**
+ * Codes already sent on WhatsApp.
+ *
+ * Kept in `settings` rather than a column, for the same reason as the panitia
+ * list: adding a column needs DDL and the direct Postgres host is unreachable
+ * from here. Shared state rather than per-device, because sending 186 messages
+ * is a job two people split, and each needs to see what the other has done.
+ */
+export async function sentCodes(env: Env): Promise<Set<string>> {
+  try {
+    const rows = (await rest(env, "settings?key=eq.sent_codes&select=value")) as
+      | { value: string }[]
+      | null;
+    const list = JSON.parse(rows?.[0]?.value ?? "[]") as unknown;
+    return new Set(Array.isArray(list) ? list.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+/** Records one code as sent. Read-modify-write; one sender at a time is fine. */
+export async function markSent(env: Env, code: string, sent: boolean): Promise<void> {
+  const codes = await sentCodes(env);
+  if (sent) codes.add(code);
+  else codes.delete(code);
+  await rest(env, "settings", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({
+      key: "sent_codes",
+      value: JSON.stringify([...codes]),
+      updated_by: "admin",
+    }),
+  });
+}
+
 export async function staffNames(env: Env): Promise<string[]> {
   try {
     const rows = (await rest(env, "settings?key=eq.staff_names&select=value")) as
