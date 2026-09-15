@@ -193,6 +193,7 @@ export function listPage(
   c: Ctx,
   rows: tickets.Found[],
   sites: Map<string, { slug: string | null; built: boolean }>,
+  panitia: Set<string>,
   filter: string,
   domain: string,
 ): Response {
@@ -200,6 +201,7 @@ export function listPage(
     filter === "hadir" ? Boolean(t.checked_at)
     : filter === "belum" ? !t.checked_at
     : filter === "jadi" ? sites.get(t.manual_code)?.built
+    : filter === "panitia" ? panitia.has(t.manual_code)
     : true;
 
   const shown = rows.filter(want);
@@ -229,6 +231,11 @@ export function listPage(
         <td>${
           site?.built ? `<span class="tag ok">jadi</span>` : `<span class="tag">belum</span>`
         }</td>
+        <td>${
+          panitia.has(t.manual_code)
+            ? `<span class="tag brand">Panitia</span>`
+            : `<span class="meta">Peserta</span>`
+        }</td>
       </tr>`;
     })
     .join("");
@@ -243,6 +250,7 @@ export function listPage(
           ${tab("hadir", `Hadir (${rows.filter((t) => t.checked_at).length})`)}
           ${tab("belum", `Belum (${rows.filter((t) => !t.checked_at).length})`)}
           ${tab("jadi", `Website jadi (${rows.filter((t) => sites.get(t.manual_code)?.built).length})`)}
+          ${tab("panitia", `Panitia (${rows.filter((t) => panitia.has(t.manual_code)).length})`)}
         </div>
       </div>
       <div class="card plist">
@@ -250,7 +258,7 @@ export function listPage(
           shown.length
             ? `<div class="scroll"><table>
                  <thead><tr><th class="num">#</th><th>Nama</th><th>Kode</th>
-                 <th>Website</th><th>Hadir</th><th>Web</th></tr></thead>
+                 <th>Website</th><th>Hadir</th><th>Web</th><th>Keterangan</th></tr></thead>
                  <tbody>${body}</tbody>
                </table></div>`
             : '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'
@@ -330,11 +338,12 @@ export async function handle(
   if (path === "/admin/log") return auditPage(c, await tickets.audit(env));
 
   if (path === "/admin/peserta") {
-    const [rows, sites] = await Promise.all([
-      tickets.all(env),
+    const [rows, sites, panitia] = await Promise.all([
+      tickets.all(env, true),
       new Store(env.DB).siteIndex(),
+      tickets.panitiaCodes(env),
     ]);
-    return listPage(c, rows, sites, url.searchParams.get("f") ?? "semua", env.DOMAIN);
+    return listPage(c, rows, sites, panitia, url.searchParams.get("f") ?? "semua", env.DOMAIN);
   }
 
   if (req.method === "POST") {

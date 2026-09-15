@@ -107,6 +107,7 @@ video{width:100%;border-radius:12px;background:#000;display:block}
 background:#eef1f5;color:#3c4a5c;margin-right:5px}
 .tag.ok{background:#e8f6ee;color:#0d5c34}
 .tag.bad{background:#fdeceb;color:#8c1d18}
+.tag.brand{background:#e7f0f8;color:var(--brand)}
 .act{display:flex;gap:7px;margin-top:7px}
 .act input{flex:1;font-size:14px;padding:9px}
 .act button{width:auto;flex:none;margin-top:0;padding:9px 13px;font-size:14px;white-space:nowrap}
