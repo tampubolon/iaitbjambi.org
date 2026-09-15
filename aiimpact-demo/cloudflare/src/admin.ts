@@ -350,7 +350,7 @@ export function sendPage(
     `<a class="tab${filter === key ? " on" : ""}" href="/admin/kirim?f=${key}">${label}</a>`;
 
   const cards = shown
-    .map((t) => {
+    .map((t, i) => {
       const tok = tokens.get(t.manual_code);
       const slug = sites.get(t.manual_code)?.slug;
       const site = slug ? `https://${slug}.${domain}` : "";
@@ -367,7 +367,7 @@ export function sendPage(
       const isSent = sent.has(t.manual_code);
 
       return `<div class="sr${isSent ? " done" : ""}">
-        <div class="who"><b>${c.esc(t.name)}</b>
+        <div class="who"><span class="idx">${i + 1}.</span><b>${c.esc(t.name)}</b>
           ${isSent ? '<span class="tag ok">terkirim</span>' : ""}
           ${phone ? "" : '<span class="tag bad">tanpa nomor</span>'}</div>
         <div class="meta">${c.esc(phone ?? "pilih kontak saat mengirim")}</div>

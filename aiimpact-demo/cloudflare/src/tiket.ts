@@ -124,6 +124,7 @@ background:#eef1f5;color:#3c4a5c;text-decoration:none}
 .sr{padding:11px 16px;border-top:1px solid var(--line)}
 .sr.done{background:#f5faf7}
 .sr .who{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.sr .idx{color:var(--muted);font-variant-numeric:tabular-nums;font-size:13px;min-width:26px}
 .sr .acts{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
 .sr form{margin:0}
 a.wa{display:inline-block;background:#25D366;color:#fff;text-decoration:none;font-weight:600;
