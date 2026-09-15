@@ -121,6 +121,21 @@ background:#eef1f5;color:#3c4a5c;margin-right:5px}
 background:#eef1f5;color:#3c4a5c;text-decoration:none}
 .tab.on{background:var(--brand);color:#fff}
 .plist{padding:0}
+.sr{padding:11px 16px;border-top:1px solid var(--line)}
+.sr.done{background:#f5faf7}
+.sr .who{display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.sr .acts{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.sr form{margin:0}
+a.wa{display:inline-block;background:#25D366;color:#fff;text-decoration:none;font-weight:600;
+padding:9px 15px;border-radius:9px;font-size:14px}
+button.tick{display:inline-flex;align-items:center;gap:7px;width:auto;margin:0;
+background:#fff;color:var(--muted);border:1.5px solid var(--line);padding:8px 13px;font-size:14px}
+button.tick .box{width:17px;height:17px;border:1.5px solid var(--line);border-radius:4px;
+display:inline-block;line-height:15px;text-align:center;font-size:12px;color:#fff;background:#fff}
+button.tick.on{color:#0d5c34;border-color:#1a7f4b}
+button.tick.on .box{background:#1a7f4b;border-color:#1a7f4b}
+.bar{height:7px;border-radius:99px;background:#e7ecf2;overflow:hidden;margin-top:8px}
+.bar span{display:block;height:100%;background:#1a7f4b}
 .arr{padding:10px 16px;border-top:1px solid var(--line)}
 .arr .who{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .arr .site{margin-top:2px;font-size:12.5px;word-break:break-all}

@@ -171,6 +171,7 @@ export function dashboard(
         </form>
       </div>
       ${list}
+      <a class="btn ghost" href="/admin/kirim">Kirim pesan WhatsApp ke peserta</a>
       <a class="btn ghost" href="/admin/peserta">Daftar peserta &amp; website</a>
       <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
       <a class="btn ghost" href="/admin/log">Riwayat tindakan admin</a>
@@ -279,6 +280,140 @@ export function listPage(
   );
 }
 
+/**
+ * The message every participant receives. One place, so the text sent on the
+ * day is the text that was approved rather than a retyped approximation.
+ *
+ * No asterisks anywhere: WhatsApp treats them as bold markers and would pair a
+ * stray one with another, eating both and whatever sits between them.
+ */
+export function pesanPeserta(nama: string, tiket: string, kode: string, site: string): string {
+  return `Halo ${nama},
+
+Selamat! Anda terdaftar sebagai peserta AIMPACT - AI untuk UMKM.
+Rabu, 17 September 2026 - Kota Jambi.
+
+TIKET ANDA
+${tiket}
+
+Buka link di atas, lalu SIMPAN gambar QR ke galeri HP Anda. Tunjukkan QR tersebut di meja registrasi. Dengan menyimpannya, Anda tidak perlu sinyal saat mengantre.
+
+KODE ANDA: ${kode}
+
+Sebutkan kode ini jika kamera petugas bermasalah.
+
+SETELAH REGISTRASI
+Anda akan membuat website usaha Anda sendiri dengan bantuan AI, di:
+https://aimpact.iaitbjambi.org
+
+Masukkan kode yang sama, lalu ceritakan usaha Anda. Website Anda akan hidup di:
+${site}
+
+Mohon diperhatikan: website baru bisa dibuat SETELAH Anda registrasi di meja panitia.
+
+Tiket ini hanya untuk Anda dan tidak dapat dipindahtangankan.
+Sampai jumpa di AImpact!`;
+}
+
+/**
+ * Sending page: one WhatsApp button per participant, with the message already
+ * written.
+ *
+ * WhatsApp cannot be sent from a server without the paid Business API, so the
+ * admin still presses send. What this removes is the part that actually goes
+ * wrong by hand: pasting the wrong person's ticket link into the wrong chat.
+ *
+ * Progress is stored server-side rather than in the browser, because sending
+ * 186 messages is a job two people split and each needs to see the other's
+ * work.
+ */
+export function sendPage(
+  c: Ctx,
+  rows: tickets.Found[],
+  sites: Map<string, { slug: string | null; built: boolean }>,
+  tokens: Map<string, string>,
+  sent: Set<string>,
+  filter: string,
+  domain: string,
+): Response {
+  const withPhone = rows.filter((t) => t.wa_number && t.wa_number !== "-");
+  const done = rows.filter((t) => sent.has(t.manual_code)).length;
+
+  const shown = rows.filter((t) =>
+    filter === "belum" ? !sent.has(t.manual_code)
+    : filter === "sudah" ? sent.has(t.manual_code)
+    : filter === "tanpa" ? !t.wa_number || t.wa_number === "-"
+    : true,
+  );
+
+  const tab = (key: string, label: string) =>
+    `<a class="tab${filter === key ? " on" : ""}" href="/admin/kirim?f=${key}">${label}</a>`;
+
+  const cards = shown
+    .map((t) => {
+      const tok = tokens.get(t.manual_code);
+      const slug = sites.get(t.manual_code)?.slug;
+      const site = slug ? `https://${slug}.${domain}` : "";
+      const msg = pesanPeserta(
+        t.name,
+        tok ? `https://tiket.${domain}/t/${tok}` : "(link tiket tidak tersedia)",
+        t.manual_code,
+        site || "(alamat belum tersedia)",
+      );
+      const phone = t.wa_number && t.wa_number !== "-" ? t.wa_number : null;
+      const href = phone
+        ? `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+        : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      const isSent = sent.has(t.manual_code);
+
+      return `<div class="sr${isSent ? " done" : ""}">
+        <div class="who"><b>${c.esc(t.name)}</b>
+          ${isSent ? '<span class="tag ok">terkirim</span>' : ""}
+          ${phone ? "" : '<span class="tag bad">tanpa nomor</span>'}</div>
+        <div class="meta">${c.esc(phone ?? "pilih kontak saat mengirim")}</div>
+        <div class="acts">
+          <a class="wa" href="${c.esc(href)}" target="_blank" rel="noopener"
+             data-code="${c.esc(t.manual_code)}">Kirim WhatsApp</a>
+          <form method="POST" action="/admin/kirim">
+            <input type="hidden" name="code" value="${c.esc(t.manual_code)}">
+            <input type="hidden" name="sent" value="${isSent ? "0" : "1"}">
+            <input type="hidden" name="f" value="${c.esc(filter)}">
+            <button class="tick${isSent ? " on" : ""}" type="submit"
+              title="${isSent ? "Batalkan tanda terkirim" : "Tandai sudah terkirim"}">
+              <span class="box">${isSent ? "&#10003;" : ""}</span>${
+                isSent ? "Sudah dikirim" : "Tandai terkirim"
+              }</button>
+          </form>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  return c.page(
+    "Kirim pesan peserta",
+    `<div class="wrap wide">
+      <div class="card">
+        <h2>Kirim pesan ke peserta</h2>
+        <p class="meta">${done} dari ${rows.length} sudah ditandai terkirim.
+        ${rows.length - withPhone.length} peserta tanpa nomor WhatsApp.</p>
+        <div class="bar"><span style="width:${
+          rows.length ? Math.round((done / rows.length) * 100) : 0
+        }%"></span></div>
+        <div class="tabs" style="margin-top:10px">
+          ${tab("semua", `Semua (${rows.length})`)}
+          ${tab("belum", `Belum (${rows.length - done})`)}
+          ${tab("sudah", `Terkirim (${done})`)}
+          ${tab("tanpa", `Tanpa nomor (${rows.length - withPhone.length})`)}
+        </div>
+        <p class="hint">Tekan tombol hijau: WhatsApp terbuka dengan pesan sudah terisi,
+        Anda tinggal menekan kirim. Setelah kembali ke halaman ini, tandai terkirim.</p>
+      </div>
+      <div class="card plist">${cards || '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'}</div>
+      <a class="btn ghost" href="/admin">Kembali</a>
+    </div>`,
+  );
+}
+
 export function auditPage(c: Ctx, entries: tickets.AuditEntry[]): Response {
   const rows = entries.length
     ? entries
@@ -345,6 +480,26 @@ export async function handle(
   }
 
   if (path === "/admin/log") return auditPage(c, await tickets.audit(env));
+
+  if (path === "/admin/kirim") {
+    if (req.method === "POST") {
+      const form = await req.formData();
+      await tickets.markSent(env, String(form.get("code") ?? ""), form.get("sent") === "1");
+      const back = String(form.get("f") ?? "semua");
+      return new Response(null, {
+        status: 303,
+        headers: { location: `/admin/kirim?f=${encodeURIComponent(back)}` },
+      });
+    }
+    const [rows, sites, tokens, sent] = await Promise.all([
+      tickets.all(env),
+      new Store(env.DB).siteIndex(),
+      tickets.ticketTokens(env),
+      tickets.sentCodes(env),
+    ]);
+    return sendPage(c, rows, sites, tokens, sent,
+      url.searchParams.get("f") ?? "belum", env.DOMAIN);
+  }
 
   if (path === "/admin/peserta") {
     const [rows, sites, panitia, tokens] = await Promise.all([
