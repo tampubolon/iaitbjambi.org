@@ -21,6 +21,7 @@ import type { Env, Ticket } from "./model";
 import { png, svg } from "./qr";
 import { sign, verify } from "./auth";
 import * as admin from "./admin";
+import { Store } from "./store";
 import * as tickets from "./ticket";
 
 const PRIVATE = {
@@ -120,6 +121,10 @@ background:#eef1f5;color:#3c4a5c;margin-right:5px}
 background:#eef1f5;color:#3c4a5c;text-decoration:none}
 .tab.on{background:var(--brand);color:#fff}
 .plist{padding:0}
+.arr{padding:10px 16px;border-top:1px solid var(--line)}
+.arr .who{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.arr .site{margin-top:2px;font-size:12.5px;word-break:break-all}
+.arr .site a{color:var(--muted)}
 /* No sideways scrolling: every cell wraps and the table fits whatever width
    the phone has. Long URLs break mid-string rather than forcing the page
    wider than the screen. */
@@ -384,7 +389,41 @@ const SCANNER_JS = String.raw`
 })();
 `;
 
-function boardPage(c: tickets.Counts): Response {
+/**
+ * The attendance board: the counts, then who has actually arrived.
+ *
+ * Shows each person's name, the time, who admitted them, and the address their
+ * site will live at. It deliberately shows NEITHER their code nor their ticket
+ * link. Staff have no reason to read a code they are not typing, and a board
+ * left face-up on a desk, or held up for a queue to see, would otherwise be a
+ * list of working credentials for the lab. Those stay on the admin pages.
+ */
+function boardPage(
+  c: tickets.Counts,
+  who: tickets.Attended[],
+  sites: Map<string, { slug: string | null; built: boolean }>,
+  domain: string,
+): Response {
+  const list = who.length
+    ? who
+        .map((a) => {
+          const site = sites.get(a.code);
+          const host = site?.slug ? `${site.slug}.${domain}` : null;
+          return `<div class="arr">
+            <div class="who"><b>${esc(a.name)}</b>
+              <span class="meta">${esc(wib(a.at))} &middot; ${esc(a.by)}</span></div>
+            <div class="site">${
+              host
+                ? `<a href="https://${esc(host)}" target="_blank" rel="noopener">${esc(host)}</a>${
+                    site?.built ? ' <span class="tag ok">jadi</span>' : ""
+                  }`
+                : `<span class="meta">-</span>`
+            }</div>
+          </div>`;
+        })
+        .join("")
+    : `<p class="meta" style="padding:14px 16px">Belum ada peserta yang check-in.</p>`;
+
   return page(
     "Papan kehadiran",
     `<div class="wrap">
@@ -394,6 +433,7 @@ function boardPage(c: tickets.Counts): Response {
         <div><div class="big">${c.invited}</div><div class="meta">Diundang</div></div>
       </div>
       ${c.revoked ? `<p class="hint">${c.revoked} tiket dibatalkan.</p>` : ""}
+      <div class="card plist"><h2 style="padding:12px 16px 0;margin:0">Sudah check-in</h2>${list}</div>
       <a class="btn ghost" href="/scan">Kembali ke scanner</a>
     </div>`,
     `<meta http-equiv="refresh" content="15">`,
@@ -506,7 +546,14 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     }
 
     if (path === "/scan") return scanPage(who);
-    if (path === "/papan") return boardPage(await tickets.counts(env));
+    if (path === "/papan") {
+      const [counts, arrivals, sites] = await Promise.all([
+        tickets.counts(env),
+        tickets.attended(env),
+        new Store(env.DB).siteIndex(),
+      ]);
+      return boardPage(counts, arrivals, sites, env.DOMAIN);
+    }
 
     if (path === "/api/checkin" && req.method === "POST") {
       const body = (await req.json().catch(() => ({}))) as { token?: string; code?: string };

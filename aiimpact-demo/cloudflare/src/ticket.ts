@@ -402,6 +402,43 @@ export async function ticketTokens(env: Env): Promise<Map<string, string>> {
  * way round: a scanner that admits anyone is worse than one that admits
  * nobody while somebody fixes the row.
  */
+export interface Attended {
+  name: string;
+  code: string;
+  at: string;
+  by: string;
+}
+
+/**
+ * Who has arrived, most recent first.
+ *
+ * Queried from check_ins rather than tickets so the ordering is on the column
+ * that matters and PostgREST does not have to sort an embedded table.
+ *
+ * The code comes back because the participant's site address is keyed by it in
+ * D1, but the scanner board must not render it: a board left face-up on a desk
+ * would otherwise be a list of working credentials, and staff have no reason
+ * to read a code they are not typing.
+ */
+export async function attended(env: Env, limit = 250): Promise<Attended[]> {
+  const rows = (await rest(
+    env,
+    `check_ins?select=checked_at,staff,tickets(name,manual_code,is_staff)` +
+      `&order=checked_at.desc&limit=${limit}`,
+  )) as
+    | { checked_at: string; staff: string; tickets: { name: string; manual_code: string; is_staff: boolean } | null }[]
+    | null;
+
+  return (rows ?? [])
+    .filter((r) => r.tickets && !r.tickets.is_staff)
+    .map((r) => ({
+      name: r.tickets!.name,
+      code: r.tickets!.manual_code,
+      at: r.checked_at,
+      by: r.staff,
+    }));
+}
+
 export async function staffNames(env: Env): Promise<string[]> {
   try {
     const rows = (await rest(env, "settings?key=eq.staff_names&select=value")) as
