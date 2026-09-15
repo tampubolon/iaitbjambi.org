@@ -116,13 +116,19 @@ background:#eef1f5;color:#3c4a5c;margin-right:5px}
 .tab{font-size:13px;font-weight:600;padding:7px 11px;border-radius:99px;
 background:#eef1f5;color:#3c4a5c;text-decoration:none}
 .tab.on{background:var(--brand);color:#fff}
-.plist{padding:6px 0}
-.prow{padding:11px 16px;border-bottom:1px solid var(--line)}
-.prow:last-child{border-bottom:0}
-.pname{font-weight:700;font-size:15px}
-.pcode{font:700 14px ui-monospace,monospace;letter-spacing:.12em;color:var(--brand)}
-.psite{font-size:13px;word-break:break-all;margin:2px 0 5px}
-.psite a{color:var(--muted)}
+.plist{padding:0;overflow:hidden}
+/* The table is wider than a phone; it scrolls inside its own box rather than
+   making the whole page scroll sideways. */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+position:sticky;top:0;background:var(--card)}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:#fafbfc}
+td.num,th.num{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;width:1%}
+td.code{font:700 13px ui-monospace,monospace;letter-spacing:.1em;color:var(--brand)}
+td.site a{color:var(--muted);font-size:12px}
 .row{display:flex;gap:10px}.row>div{flex:1;text-align:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px}
 `;

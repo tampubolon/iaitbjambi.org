@@ -206,26 +206,30 @@ export function listPage(
   const tab = (key: string, label: string) =>
     `<a class="tab${filter === key ? " on" : ""}" href="/admin/peserta?f=${key}">${label}</a>`;
 
+  // Numbered within the current filter, so "row 83" means the 83rd of what is
+  // on screen rather than a position in a list nobody is looking at.
   const body = shown
-    .map((t) => {
+    .map((t, i) => {
       const site = sites.get(t.manual_code);
       const host = site?.slug ? `${site.slug}.${domain}` : null;
-      const state = t.checked_at
-        ? `<span class="tag ok">Hadir ${c.esc(c.wib(t.checked_at))}</span>`
-        : `<span class="tag">Belum hadir</span>`;
-      const page = site?.built
-        ? `<span class="tag ok">Website jadi</span>`
-        : `<span class="tag">Belum dibuat</span>`;
-      return `<div class="prow">
-        <div class="pname">${c.esc(t.name)}</div>
-        <div class="pcode">${c.esc(t.manual_code)}</div>
-        <div class="psite">${
+      return `<tr>
+        <td class="num">${i + 1}</td>
+        <td>${c.esc(t.name)}</td>
+        <td class="code">${c.esc(t.manual_code)}</td>
+        <td class="site">${
           host
             ? `<a href="https://${c.esc(host)}" target="_blank" rel="noopener">${c.esc(host)}</a>`
-            : `<span class="meta">tidak ada akun lab</span>`
-        }</div>
-        <div>${state} ${page}</div>
-      </div>`;
+            : `<span class="meta">-</span>`
+        }</td>
+        <td>${
+          t.checked_at
+            ? `<span class="tag ok">${c.esc(c.wib(t.checked_at))}</span>`
+            : `<span class="tag">belum</span>`
+        }</td>
+        <td>${
+          site?.built ? `<span class="tag ok">jadi</span>` : `<span class="tag">belum</span>`
+        }</td>
+      </tr>`;
     })
     .join("");
 
@@ -241,7 +245,17 @@ export function listPage(
           ${tab("jadi", `Website jadi (${rows.filter((t) => sites.get(t.manual_code)?.built).length})`)}
         </div>
       </div>
-      <div class="card plist">${body || '<p class="meta">Tidak ada.</p>'}</div>
+      <div class="card plist">
+        ${
+          shown.length
+            ? `<div class="scroll"><table>
+                 <thead><tr><th class="num">#</th><th>Nama</th><th>Kode</th>
+                 <th>Website</th><th>Hadir</th><th>Web</th></tr></thead>
+                 <tbody>${body}</tbody>
+               </table></div>`
+            : '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'
+        }
+      </div>
       <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
       <a class="btn ghost" href="/admin">Kembali</a>
     </div>`,
