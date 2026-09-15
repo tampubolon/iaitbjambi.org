@@ -328,4 +328,8 @@ console.log(`
   out/distribusi.csv    import to Google Sheets (formulas in F and I)
   out/cetak.html        open and print (8 slips per A4 page)
   out/tokens.txt        KEEP PRIVATE
+
+  Note: the "Panitia" labels on /admin/peserta are stored in Supabase
+  settings.panitia_codes and refer to codes. Re-issuing mints new codes, so
+  that list must be updated afterwards or every row reads "Peserta".
 `);

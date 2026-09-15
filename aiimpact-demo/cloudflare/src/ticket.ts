@@ -325,11 +325,18 @@ export async function audit(env: Env, limit = 50): Promise<AuditEntry[]> {
   )) ?? []) as AuditEntry[];
 }
 
-/** Every ticket, for the attendance export (F09). */
-export async function all(env: Env): Promise<Found[]> {
+/**
+ * Every ticket, for the attendance export (F09) and the admin list.
+ *
+ * `includeStaff` is false for the export — a test account is not a person who
+ * turned up — and true for the list, where it still needs a row so it can be
+ * labelled and found.
+ */
+export async function all(env: Env, includeStaff = false): Promise<Found[]> {
+  const filter = includeStaff ? "" : "is_staff=is.false&";
   const rows = (await rest(
     env,
-    `tickets?is_staff=is.false&select=ticket_id,name,wa_number,manual_code,builder_code,status,` +
+    `tickets?${filter}select=ticket_id,name,wa_number,manual_code,builder_code,status,` +
       `is_staff,check_ins(checked_at,staff)&order=name.asc&limit=1000`,
   )) as (Row & { is_staff: boolean })[] | null;
   return (rows ?? []).map((row) => {
@@ -346,4 +353,28 @@ export async function all(env: Env): Promise<Found[]> {
       checked_by: seen?.staff ?? null,
     };
   });
+}
+
+/**
+ * Codes marked as panitia, for the "Keterangan" column.
+ *
+ * Kept as data in `settings` rather than a column on tickets, because adding
+ * one needs DDL and the direct Postgres host is not reachable from here. It
+ * also means the list can be corrected without a deploy — which is the more
+ * useful property on the day.
+ */
+export async function panitiaCodes(env: Env): Promise<Set<string>> {
+  try {
+    const rows = (await rest(env, "settings?key=eq.panitia_codes&select=value")) as
+      | { value: string }[]
+      | null;
+    const raw = rows?.[0]?.value;
+    if (!raw) return new Set();
+    const list = JSON.parse(raw) as unknown;
+    return new Set(Array.isArray(list) ? list.map((c) => String(c).toUpperCase()) : []);
+  } catch {
+    // A malformed or missing list means everyone reads as "Peserta", which is
+    // wrong but harmless — better than a 500 on the page the desk relies on.
+    return new Set();
+  }
 }
