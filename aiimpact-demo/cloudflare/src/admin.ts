@@ -14,6 +14,7 @@
  * database, not by this form, so it cannot be skipped by posting directly.
  */
 import type { Env } from "./model";
+import { Store } from "./store";
 import * as tickets from "./ticket";
 
 /** Renders a value for a CSV cell, quoting and escaping as needed. */
@@ -170,11 +171,79 @@ export function dashboard(
         </form>
       </div>
       ${list}
+      <a class="btn ghost" href="/admin/peserta">Daftar peserta &amp; website</a>
       <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
       <a class="btn ghost" href="/admin/log">Riwayat tindakan admin</a>
       <a class="btn ghost" href="/scan">Buka scanner</a>
       <form method="POST" action="/admin/keluar"><button class="ghost" type="submit">Keluar</button></form>
       ${labIsOpen ? "" : labOpenControl(c)}
+    </div>`,
+  );
+}
+
+/**
+ * The whole list: who is coming, their code, and where their site will live.
+ *
+ * Joins the ticket (Supabase) to the lab account (D1), because the site label
+ * is assigned at issuance and only D1 holds it. Filters rather than paginates
+ * — 205 rows is one screen of scrolling on a phone, and a help desk wants to
+ * search by eye, not click through pages.
+ */
+export function listPage(
+  c: Ctx,
+  rows: tickets.Found[],
+  sites: Map<string, { slug: string | null; built: boolean }>,
+  filter: string,
+  domain: string,
+): Response {
+  const want = (t: tickets.Found) =>
+    filter === "hadir" ? Boolean(t.checked_at)
+    : filter === "belum" ? !t.checked_at
+    : filter === "jadi" ? sites.get(t.manual_code)?.built
+    : true;
+
+  const shown = rows.filter(want);
+  const tab = (key: string, label: string) =>
+    `<a class="tab${filter === key ? " on" : ""}" href="/admin/peserta?f=${key}">${label}</a>`;
+
+  const body = shown
+    .map((t) => {
+      const site = sites.get(t.manual_code);
+      const host = site?.slug ? `${site.slug}.${domain}` : null;
+      const state = t.checked_at
+        ? `<span class="tag ok">Hadir ${c.esc(c.wib(t.checked_at))}</span>`
+        : `<span class="tag">Belum hadir</span>`;
+      const page = site?.built
+        ? `<span class="tag ok">Website jadi</span>`
+        : `<span class="tag">Belum dibuat</span>`;
+      return `<div class="prow">
+        <div class="pname">${c.esc(t.name)}</div>
+        <div class="pcode">${c.esc(t.manual_code)}</div>
+        <div class="psite">${
+          host
+            ? `<a href="https://${c.esc(host)}" target="_blank" rel="noopener">${c.esc(host)}</a>`
+            : `<span class="meta">tidak ada akun lab</span>`
+        }</div>
+        <div>${state} ${page}</div>
+      </div>`;
+    })
+    .join("");
+
+  return c.page(
+    "Daftar peserta",
+    `<div class="wrap wide">
+      <div class="card">
+        <h2>Daftar peserta</h2>
+        <div class="tabs">
+          ${tab("semua", `Semua (${rows.length})`)}
+          ${tab("hadir", `Hadir (${rows.filter((t) => t.checked_at).length})`)}
+          ${tab("belum", `Belum (${rows.filter((t) => !t.checked_at).length})`)}
+          ${tab("jadi", `Website jadi (${rows.filter((t) => sites.get(t.manual_code)?.built).length})`)}
+        </div>
+      </div>
+      <div class="card plist">${body || '<p class="meta">Tidak ada.</p>'}</div>
+      <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
+      <a class="btn ghost" href="/admin">Kembali</a>
     </div>`,
   );
 }
@@ -245,6 +314,14 @@ export async function handle(
   }
 
   if (path === "/admin/log") return auditPage(c, await tickets.audit(env));
+
+  if (path === "/admin/peserta") {
+    const [rows, sites] = await Promise.all([
+      tickets.all(env),
+      new Store(env.DB).siteIndex(),
+    ]);
+    return listPage(c, rows, sites, url.searchParams.get("f") ?? "semua", env.DOMAIN);
+  }
 
   if (req.method === "POST") {
     const form = await req.formData();

@@ -111,6 +111,18 @@ background:#eef1f5;color:#3c4a5c;margin-right:5px}
 .act input{flex:1;font-size:14px;padding:9px}
 .act button{width:auto;flex:none;margin-top:0;padding:9px 13px;font-size:14px;white-space:nowrap}
 .act button.danger{background:#b3261e}
+.wrap.wide{max-width:760px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px}
+.tab{font-size:13px;font-weight:600;padding:7px 11px;border-radius:99px;
+background:#eef1f5;color:#3c4a5c;text-decoration:none}
+.tab.on{background:var(--brand);color:#fff}
+.plist{padding:6px 0}
+.prow{padding:11px 16px;border-bottom:1px solid var(--line)}
+.prow:last-child{border-bottom:0}
+.pname{font-weight:700;font-size:15px}
+.pcode{font:700 14px ui-monospace,monospace;letter-spacing:.12em;color:var(--brand)}
+.psite{font-size:13px;word-break:break-all;margin:2px 0 5px}
+.psite a{color:var(--muted)}
 .row{display:flex;gap:10px}.row>div{flex:1;text-align:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px}
 `;
