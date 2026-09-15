@@ -390,6 +390,30 @@ export async function ticketTokens(env: Env): Promise<Map<string, string>> {
   }
 }
 
+/**
+ * Names allowed to sign in at the scanner.
+ *
+ * The name used to be free text, recorded only for attribution. It is now
+ * half the credential, so it has to be checked against a list — and the list
+ * lives in `settings` so a volunteer can be added on the morning without a
+ * deploy.
+ *
+ * An empty or unreadable list means nobody can sign in, which is the right
+ * way round: a scanner that admits anyone is worse than one that admits
+ * nobody while somebody fixes the row.
+ */
+export async function staffNames(env: Env): Promise<string[]> {
+  try {
+    const rows = (await rest(env, "settings?key=eq.staff_names&select=value")) as
+      | { value: string }[]
+      | null;
+    const list = JSON.parse(rows?.[0]?.value ?? "[]") as unknown;
+    return Array.isArray(list) ? list.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function panitiaCodes(env: Env): Promise<Set<string>> {
   try {
     const rows = (await rest(env, "settings?key=eq.panitia_codes&select=value")) as

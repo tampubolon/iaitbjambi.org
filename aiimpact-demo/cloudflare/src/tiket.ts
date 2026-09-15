@@ -91,6 +91,8 @@ a.btn,button{display:block;width:100%;padding:14px;border-radius:10px;border:0;
 background:var(--brand);color:#fff;font:600 16px system-ui;text-align:center;
 text-decoration:none;margin-top:10px;cursor:pointer}
 button.ghost{background:#fff;color:var(--brand);border:1.5px solid var(--brand)}
+select{width:100%;padding:13px;border:1.5px solid var(--line);border-radius:10px;
+font:600 16px system-ui;background:#fff;color:var(--ink)}
 input{width:100%;padding:13px;border:1.5px solid var(--line);border-radius:10px;
 font:600 20px ui-monospace,monospace;text-align:center;letter-spacing:.1em;text-transform:uppercase}
 video{width:100%;border-radius:12px;background:#000;display:block}
@@ -241,7 +243,11 @@ async function sessionCookie(env: Env, role: string, name: string): Promise<stri
   );
 }
 
-function signIn(message = ""): Response {
+function signIn(names: string[] = [], message = ""): Response {
+  const options = names
+    .map((n) => `<option value="${esc(n)}">${esc(n)}</option>`)
+    .join("");
+
   return page(
     "Masuk petugas",
     `<div class="wrap"><div class="card">
@@ -249,8 +255,14 @@ function signIn(message = ""): Response {
       ${message ? `<div class="res bad"><b>Gagal</b>${esc(message)}</div>` : ""}
       <form method="POST" action="/masuk">
         <h2 style="margin-top:14px">Nama Anda</h2>
-        <input name="nama" required autocomplete="name" style="text-transform:none;letter-spacing:0">
-        <h2 style="margin-top:14px">Kata sandi panitia</h2>
+        ${
+          options
+            ? `<select name="nama" required>
+                 <option value="" disabled selected>Pilih nama</option>${options}
+               </select>`
+            : `<p class="meta">Daftar petugas belum diatur. Hubungi admin.</p>`
+        }
+        <h2 style="margin-top:14px">Kata sandi petugas</h2>
         <input name="sandi" type="password" required style="letter-spacing:0">
         <button type="submit">Masuk</button>
       </form>
@@ -464,14 +476,16 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   }
 
   if (path === "/masuk") {
+    const roster = await tickets.staffNames(env);
     if (req.method === "POST") {
       const form = await req.formData();
-      // sign() packs the subject as "<value>:<expiry>", so a colon in the
-      // name would move the boundary and corrupt the token.
-      const name = String(form.get("nama") ?? "").replace(/:/g, " ").trim().slice(0, 40);
+      const typed = String(form.get("nama") ?? "").trim().slice(0, 40);
       const pass = String(form.get("sandi") ?? "");
+      // Match the roster case-insensitively but store the roster's spelling,
+      // so attendance records read consistently whatever was submitted.
+      const name = roster.find((n) => n.toLowerCase() === typed.toLowerCase()) ?? "";
       if (!env.STAFF_PASSWORD || pass !== env.STAFF_PASSWORD || !name) {
-        return signIn("Nama atau kata sandi salah.");
+        return signIn(roster, "Nama atau kata sandi salah.");
       }
       return new Response(null, {
         status: 303,
@@ -481,14 +495,14 @@ export async function handle(req: Request, env: Env): Promise<Response> {
         },
       });
     }
-    return signIn();
+    return signIn(roster);
   }
 
   if (path === "/scan" || path === "/papan" || path.startsWith("/api/")) {
     const who = await staffName(req, env);
     if (!who) {
       if (path.startsWith("/api/")) return json({ title: "Sesi berakhir" }, 401);
-      return signIn();
+      return signIn(await tickets.staffNames(env));
     }
 
     if (path === "/scan") return scanPage(who);
