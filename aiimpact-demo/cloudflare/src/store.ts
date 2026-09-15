@@ -38,6 +38,27 @@ export class Store {
   }
 
   /**
+   * Every lab account's code, site label, and whether a page exists yet.
+   *
+   * For the admin participant list. The slug lives here rather than alongside
+   * the ticket in Supabase, so the two have to be joined in the Worker; one
+   * query for 205 rows is cheaper than keeping the same label in two places
+   * and hoping they agree.
+   */
+  async siteIndex(): Promise<Map<string, { slug: string | null; built: boolean }>> {
+    const { results } = await this.db
+      .prepare(
+        `SELECT p.code, p.slug, (SELECT 1 FROM pages g WHERE g.slug = p.slug) AS built
+           FROM participants p`,
+      )
+      .all<{ code: string; slug: string | null; built: number | null }>();
+
+    return new Map(
+      (results ?? []).map((r) => [r.code, { slug: r.slug, built: Boolean(r.built) }]),
+    );
+  }
+
+  /**
    * Marks a code first used and returns the participant.
    *
    * Idempotent by design: a participant who reloads, loses signal mid-request,
