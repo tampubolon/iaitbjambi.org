@@ -48,15 +48,25 @@ function fail(id, msg) {
 function clearFail(id) { $(id).classList.remove('on'); }
 
 /* Every API error the participant can actually see gets a sentence in
- * Indonesian saying what to do, never a status code. */
+ * Indonesian saying what to do, never a status code.
+ *
+ * The server's message wins, because it knows things the status code cannot.
+ * A 403 here means "you have not registered at the desk yet", not "your code
+ * is wrong" - and telling somebody their code is broken when it is fine sends
+ * them off to re-read a slip instead of walking thirty seconds to the desk.
+ * The table below only covers the server saying nothing at all: a gateway
+ * error, a dropped body, a 500 with no JSON. */
 function explain(status, body) {
-  if (status === 401 || status === 403) return 'Kode tidak berlaku. Periksa kembali lembar peserta Anda.';
+  if (body && typeof body.message === 'string' && body.message) return body.message;
+  // 401 and 403 are different problems with different fixes: a session that
+  // ran out versus a code the door has not admitted yet.
+  if (status === 401) return 'Sesi Anda berakhir. Masukkan kode Anda lagi.';
+  if (status === 403) return 'Kode belum aktif. Silakan registrasi di meja panitia terlebih dahulu.';
   if (status === 404) return 'Kode tidak ditemukan. Pastikan tidak ada huruf yang tertukar.';
   if (status === 409) return 'Kode ini sudah dipakai di perangkat lain.';
   if (status === 429) return 'Anda sudah mencapai batas pembuatan. Hubungi panitia bila perlu tambahan.';
   if (status === 501) return 'Layanan belum aktif. Sampaikan ke panitia.';
   if (status >= 500) return 'Server sedang sibuk. Coba lagi sebentar lagi.';
-  if (body && body.message) return body.message;
   return 'Terjadi kesalahan. Coba lagi.';
 }
 
