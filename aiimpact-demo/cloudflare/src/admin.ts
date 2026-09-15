@@ -335,6 +335,7 @@ export function sendPage(
   sent: Set<string>,
   filter: string,
   domain: string,
+  base = "/admin/kirim",
 ): Response {
   const withPhone = rows.filter((t) => t.wa_number && t.wa_number !== "-");
   const done = rows.filter((t) => sent.has(t.manual_code)).length;
@@ -347,7 +348,7 @@ export function sendPage(
   );
 
   const tab = (key: string, label: string) =>
-    `<a class="tab${filter === key ? " on" : ""}" href="/admin/kirim?f=${key}">${label}</a>`;
+    `<a class="tab${filter === key ? " on" : ""}" href="${base}?f=${key}">${label}</a>`;
 
   const cards = shown
     .map((t, i) => {
@@ -374,7 +375,7 @@ export function sendPage(
         <div class="acts">
           <a class="wa" href="${c.esc(href)}" target="_blank" rel="noopener"
              data-code="${c.esc(t.manual_code)}">Kirim WhatsApp</a>
-          <form method="POST" action="/admin/kirim">
+          <form method="POST" action="${base}">
             <input type="hidden" name="code" value="${c.esc(t.manual_code)}">
             <input type="hidden" name="sent" value="${isSent ? "0" : "1"}">
             <input type="hidden" name="f" value="${c.esc(filter)}">
@@ -409,7 +410,7 @@ export function sendPage(
         Anda tinggal menekan kirim. Setelah kembali ke halaman ini, tandai terkirim.</p>
       </div>
       <div class="card plist">${cards || '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'}</div>
-      <a class="btn ghost" href="/admin">Kembali</a>
+      <a class="btn ghost" href="${base === "/kirim" ? "/scan" : "/admin"}">Kembali</a>
     </div>`,
   );
 }

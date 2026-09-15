@@ -307,6 +307,7 @@ function scanPage(who: string): Response {
         <button id="find" type="button">Cari</button>
       </div>
       <a class="btn ghost" href="/papan">Lihat jumlah hadir</a>
+      <a class="btn ghost" href="/kirim">Kirim pesan ke peserta</a>
       <form method="POST" action="/keluar"><button class="ghost" type="submit">Keluar</button></form>
     </div>
     <script src="/vendor/jsQR.js"></script>
@@ -554,7 +555,12 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     return signIn(roster);
   }
 
-  if (path === "/scan" || path === "/papan" || path.startsWith("/api/")) {
+  if (
+    path === "/scan" ||
+    path === "/papan" ||
+    path === "/kirim" ||
+    path.startsWith("/api/")
+  ) {
     const who = await staffName(req, env);
     if (!who) {
       if (path.startsWith("/api/")) return json({ title: "Sesi berakhir" }, 401);
@@ -562,6 +568,38 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     }
 
     if (path === "/scan") return scanPage(who);
+    // Sending the 205 messages is shared with the volunteers rather than left
+    // to one person. It necessarily shows them each participant's number, code
+    // and ticket link, because that is what the message contains — a wider view
+    // than the scanner gives, and a deliberate choice by the organiser.
+    if (path === "/kirim") {
+      const ctx = {
+        esc,
+        wib,
+        page,
+        cookie: (e: Env, n: string) => sessionCookie(e, "admin", n),
+      };
+      if (req.method === "POST") {
+        const form = await req.formData();
+        await tickets.markSent(env, String(form.get("code") ?? ""), form.get("sent") === "1");
+        const back = String(form.get("f") ?? "belum");
+        return new Response(null, {
+          status: 303,
+          headers: { location: `/kirim?f=${encodeURIComponent(back)}` },
+        });
+      }
+      const [rows, sites, tokens, sent] = await Promise.all([
+        tickets.all(env),
+        new Store(env.DB).siteIndex(),
+        tickets.ticketTokens(env),
+        tickets.sentCodes(env),
+      ]);
+      return admin.sendPage(
+        ctx, rows, sites, tokens, sent,
+        url.searchParams.get("f") ?? "belum", env.DOMAIN, "/kirim",
+      );
+    }
+
     if (path === "/papan") {
       const [counts, arrivals, sites] = await Promise.all([
         tickets.counts(env),
