@@ -284,16 +284,26 @@ export function listPage(
  * The message every participant receives. One place, so the text sent on the
  * day is the text that was approved rather than a retyped approximation.
  *
- * No asterisks anywhere: WhatsApp treats them as bold markers and would pair a
- * stray one with another, eating both and whatever sits between them.
+ * Plain ASCII only, and no asterisks.
+ *
+ * Asterisks are WhatsApp's bold markers: a stray one pairs with another and
+ * eats both, along with whatever sits between them.
+ *
+ * The date, time and place lines used emoji until the organiser reported them
+ * arriving as replacement characters. The link itself is correct - the server
+ * percent-encodes them properly as UTF-8 - but something between the browser
+ * and the chat decodes the text parameter as single-byte, so each emoji became
+ * three of them. A label that renders on every device beats an icon that
+ * renders on some.
  */
 export function pesanPeserta(nama: string, tiket: string, kode: string, site: string): string {
   return `Halo ${nama},
 
 Selamat! Anda terdaftar sebagai peserta AIMPACT - AI untuk UMKM yang dilaksanakan pada:
-\u{1F4C6} : Kamis, 17 September 2026
-\u{1F4CD} : Aula Griya Mayang Rumah Dinas Walikota Jambi https://maps.app.goo.gl/GBCFe1FW6XhZSmNW9
-\u{23F0} : 08.00 - Selesai
+Tanggal : Kamis, 17 September 2026
+Waktu : 08.00 - Selesai
+Lokasi : Aula Griya Mayang, Rumah Dinas Walikota Jambi
+https://maps.app.goo.gl/GBCFe1FW6XhZSmNW9
 
 TIKET ANDA
 ${tiket}
