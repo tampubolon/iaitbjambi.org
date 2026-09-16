@@ -254,6 +254,10 @@ export function listPage(
   /** Rendered above the tabs; /papan puts its counters here. */
   headerHtml = "",
 ): Response {
+  // Cancelled tickets are not part of the roster: showing them as "belum
+  // hadir" would send a volunteer looking for somebody who is not coming.
+  // They remain findable, and restorable, through the /admin search.
+  rows = rows.filter((t) => t.status === "active");
   const want = (t: tickets.Found) =>
     filter === "hadir" ? Boolean(t.checked_at)
     : filter === "belum" ? !t.checked_at
@@ -437,6 +441,10 @@ export function sendPage(
   domain: string,
   base = "/admin/kirim",
 ): Response {
+  // A revoked ticket is dead: sending it would hand somebody a link that no
+  // longer works. Replaced participants drop off this list; their successors
+  // appear in their place.
+  rows = rows.filter((t) => t.status === "active");
   const withPhone = rows.filter((t) => t.wa_number && t.wa_number !== "-");
   const done = rows.filter((t) => sent.has(t.manual_code)).length;
 
