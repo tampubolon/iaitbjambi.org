@@ -1,6 +1,6 @@
 # Cloudflare Worker — AIMPACT demo
 
-Implementation of [`../README.md`](../README.md) on Cloudflare's free plan.
+Implementation of the design in [`../docs/design.md`](../docs/design.md) on Cloudflare's free plan.
 
 **Live:** https://aimpact.iaitbjambi.org — builder UI, with participant pages at
 `{slug}.iaitbjambi.org`. Fallback: `aimpact.tampubolonmartinus8.workers.dev`,
