@@ -200,6 +200,21 @@ export function listPage(
   pre: Map<string, assessment.Result>,
   filter: string,
   domain: string,
+  /**
+   * Where the filter tabs point, so the same table serves /admin/peserta and
+   * /papan without either hard-coding the other's path.
+   */
+  base = "/admin/peserta",
+  /**
+   * Whether to render the code and the ticket link.
+   *
+   * False on the attendance board: that page is left face-up on a desk and
+   * turned towards a queue, and those two columns are working credentials for
+   * the door and the lab. Everything else on the row is safe to show.
+   */
+  secrets = true,
+  /** Rendered above the tabs; /papan puts its counters here. */
+  headerHtml = "",
 ): Response {
   const want = (t: tickets.Found) =>
     filter === "hadir" ? Boolean(t.checked_at)
@@ -211,7 +226,7 @@ export function listPage(
 
   const shown = rows.filter(want);
   const tab = (key: string, label: string) =>
-    `<a class="tab${filter === key ? " on" : ""}" href="/admin/peserta?f=${key}">${label}</a>`;
+    `<a class="tab${filter === key ? " on" : ""}" href="${base}?f=${key}">${label}</a>`;
 
   // Numbered within the current filter, so "row 83" means the 83rd of what is
   // on screen rather than a position in a list nobody is looking at.
@@ -231,12 +246,16 @@ export function listPage(
         <td class="pname">${c.esc(t.name)}<div class="ket">${
           panitia.has(t.manual_code) ? "Panitia" : "Peserta"
         }</div></td>
-        <td class="code">${c.esc(t.manual_code)}</td>
+        ${
+          secrets
+            ? `<td class="code">${c.esc(t.manual_code)}</td>
         <td class="link">${
           tok
             ? `<a href="https://tiket.${domain}/t/${c.esc(tok)}" target="_blank" rel="noopener">tiket.${domain}/t/${c.esc(tok)}</a>`
             : `<span class="meta">-</span>`
-        }</td>
+        }</td>`
+            : ""
+        }
         <td class="link">${
           host
             ? `<a href="https://${c.esc(host)}" target="_blank" rel="noopener">${c.esc(host)}</a>`
@@ -261,6 +280,7 @@ export function listPage(
   return c.page(
     "Daftar peserta",
     `<div class="wrap wide">
+      ${headerHtml}
       <div class="card">
         <h2>Daftar peserta</h2>
         <div class="tabs">
@@ -276,16 +296,21 @@ export function listPage(
         ${
           shown.length
             ? `<table>
-                 <thead><tr><th class="num">#</th><th>Nama</th><th>Kode</th>
-                 <th>Link tiket</th><th>Website</th><th>Status</th>
+                 <thead><tr><th class="num">#</th><th>Nama</th>
+                 ${secrets ? "<th>Kode</th><th>Link tiket</th>" : ""}
+                 <th>Website</th><th>Status</th>
                  <th>Pre-test</th></tr></thead>
                  <tbody>${body}</tbody>
                </table>`
             : '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'
         }
       </div>
-      <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
-      <a class="btn ghost" href="/admin">Kembali</a>
+      ${
+        secrets
+          ? `<a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
+             <a class="btn ghost" href="/admin">Kembali</a>`
+          : `<a class="btn ghost" href="/scan">Kembali ke scanner</a>`
+      }
     </div>`,
   );
 }

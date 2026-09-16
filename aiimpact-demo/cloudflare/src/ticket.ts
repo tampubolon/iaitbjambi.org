@@ -412,6 +412,11 @@ export interface Attended {
 /**
  * Who has arrived, most recent first.
  *
+ * Currently unused: /papan moved to the full participant table, which carries
+ * attendance in its Status column. Kept because "who arrived, in order" is a
+ * different question from "here is everyone", and the next thing that asks it
+ * should not have to rewrite the query.
+ *
  * Queried from check_ins rather than tickets so the ordering is on the column
  * that matters and PostgREST does not have to sort an embedded table.
  *

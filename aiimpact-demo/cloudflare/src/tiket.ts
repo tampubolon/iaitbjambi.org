@@ -486,63 +486,6 @@ const SCANNER_JS = String.raw`
 })();
 `;
 
-/**
- * The attendance board: the counts, then who has actually arrived.
- *
- * Shows each person's name, the time, who admitted them, and the address their
- * site will live at. It deliberately shows NEITHER their code nor their ticket
- * link. Staff have no reason to read a code they are not typing, and a board
- * left face-up on a desk, or held up for a queue to see, would otherwise be a
- * list of working credentials for the lab. Those stay on the admin pages.
- */
-function boardPage(
-  c: tickets.Counts,
-  who: tickets.Attended[],
-  sites: Map<string, { slug: string | null; built: boolean }>,
-  pre: Map<string, assessment.Result>,
-  domain: string,
-): Response {
-  const list = who.length
-    ? who
-        .map((a) => {
-          const site = sites.get(a.code);
-          const host = site?.slug ? `${site.slug}.${domain}` : null;
-          return `<div class="arr">
-            <div class="who"><b>${esc(a.name)}</b>
-              <span class="meta">${esc(wib(a.at))} &middot; ${esc(a.by)}</span>
-              ${
-                pre.has(a.code)
-                  ? `<span class="tag ok">pre-test ${pre.get(a.code)!.score}</span>`
-                  : `<span class="tag bad">belum melakukan test</span>`
-              }</div>
-            <div class="site">${
-              host
-                ? `<a href="https://${esc(host)}" target="_blank" rel="noopener">${esc(host)}</a>${
-                    site?.built ? ' <span class="tag ok">jadi</span>' : ""
-                  }`
-                : `<span class="meta">-</span>`
-            }</div>
-          </div>`;
-        })
-        .join("")
-    : `<p class="meta" style="padding:14px 16px">Belum ada peserta yang check-in.</p>`;
-
-  return page(
-    "Papan kehadiran",
-    `<div class="wrap">
-      <div class="row">
-        <div><div class="big">${c.attended}</div><div class="meta">Hadir</div></div>
-        <div><div class="big">${c.invited - c.attended}</div><div class="meta">Belum</div></div>
-        <div><div class="big">${c.invited}</div><div class="meta">Diundang</div></div>
-      </div>
-      ${c.revoked ? `<p class="hint">${c.revoked} tiket dibatalkan.</p>` : ""}
-      <div class="card plist"><h2 style="padding:12px 16px 0;margin:0">Sudah check-in</h2>${list}</div>
-      <a class="btn ghost" href="/scan">Kembali ke scanner</a>
-    </div>`,
-    `<meta http-equiv="refresh" content="15">`,
-  );
-}
-
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -704,14 +647,36 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       );
     }
 
+    // The board is now the same table the admin sees, minus the code and the
+    // ticket link. Those two are working credentials for the door and the lab,
+    // and this is the page that gets left face-up on a desk and turned towards
+    // a queue. Everything else — name, website, attendance, pre-test score —
+    // is what the volunteers actually need.
     if (path === "/papan") {
-      const [counts, arrivals, sites, pre] = await Promise.all([
+      const ctx = {
+        esc,
+        wib,
+        page,
+        cookie: (e: Env, n: string) => sessionCookie(e, "admin", n),
+      };
+      const [counts, rows, sites, panitia, pre] = await Promise.all([
         tickets.counts(env),
-        tickets.attended(env),
+        tickets.all(env, true),
         new Store(env.DB).siteIndex(),
+        tickets.panitiaCodes(env),
         assessment.all(env, "pre"),
       ]);
-      return boardPage(counts, arrivals, sites, pre, env.DOMAIN);
+      const counters = `<div class="row">
+        <div><div class="big">${counts.attended}</div><div class="meta">Hadir</div></div>
+        <div><div class="big">${counts.invited - counts.attended}</div><div class="meta">Belum</div></div>
+        <div><div class="big">${counts.invited}</div><div class="meta">Diundang</div></div>
+      </div>
+      ${counts.revoked ? `<p class="hint">${counts.revoked} tiket dibatalkan.</p>` : ""}`;
+      return admin.listPage(
+        ctx, rows, sites, panitia, new Map(), pre,
+        url.searchParams.get("f") ?? "semua", env.DOMAIN,
+        "/papan", false, counters,
+      );
     }
 
     if (path === "/api/checkin" && req.method === "POST") {
