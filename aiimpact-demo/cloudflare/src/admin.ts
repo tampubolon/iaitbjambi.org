@@ -14,6 +14,7 @@
  * database, not by this form, so it cannot be skipped by posting directly.
  */
 import type { Env } from "./model";
+import * as assessment from "./assessment";
 import { Store } from "./store";
 import * as tickets from "./ticket";
 
@@ -196,6 +197,7 @@ export function listPage(
   sites: Map<string, { slug: string | null; built: boolean }>,
   panitia: Set<string>,
   tokens: Map<string, string>,
+  pre: Map<string, assessment.Result>,
   filter: string,
   domain: string,
 ): Response {
@@ -204,6 +206,7 @@ export function listPage(
     : filter === "belum" ? !t.checked_at
     : filter === "jadi" ? sites.get(t.manual_code)?.built
     : filter === "panitia" ? panitia.has(t.manual_code)
+    : filter === "belumtest" ? !pre.has(t.manual_code)
     : true;
 
   const shown = rows.filter(want);
@@ -246,6 +249,11 @@ export function listPage(
         }${
           site?.built ? `<span class="tag ok">web jadi</span>` : ""
         }</td>
+        <td class="st">${
+          pre.has(t.manual_code)
+            ? `<span class="tag ok">${pre.get(t.manual_code)!.score}</span>`
+            : `<span class="tag bad">belum melakukan test</span>`
+        }</td>
       </tr>`;
     })
     .join("");
@@ -261,6 +269,7 @@ export function listPage(
           ${tab("belum", `Belum (${rows.filter((t) => !t.checked_at).length})`)}
           ${tab("jadi", `Website jadi (${rows.filter((t) => sites.get(t.manual_code)?.built).length})`)}
           ${tab("panitia", `Panitia (${rows.filter((t) => panitia.has(t.manual_code)).length})`)}
+          ${tab("belumtest", `Belum test (${rows.filter((t) => !pre.has(t.manual_code)).length})`)}
         </div>
       </div>
       <div class="card plist">
@@ -268,7 +277,8 @@ export function listPage(
           shown.length
             ? `<table>
                  <thead><tr><th class="num">#</th><th>Nama</th><th>Kode</th>
-                 <th>Link tiket</th><th>Website</th><th>Status</th></tr></thead>
+                 <th>Link tiket</th><th>Website</th><th>Status</th>
+                 <th>Pre-test</th></tr></thead>
                  <tbody>${body}</tbody>
                </table>`
             : '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'
@@ -517,13 +527,14 @@ export async function handle(
   }
 
   if (path === "/admin/peserta") {
-    const [rows, sites, panitia, tokens] = await Promise.all([
+    const [rows, sites, panitia, tokens, pre] = await Promise.all([
       tickets.all(env, true),
       new Store(env.DB).siteIndex(),
       tickets.panitiaCodes(env),
       tickets.ticketTokens(env),
+      assessment.all(env, "pre"),
     ]);
-    return listPage(c, rows, sites, panitia, tokens,
+    return listPage(c, rows, sites, panitia, tokens, pre,
       url.searchParams.get("f") ?? "semua", env.DOMAIN);
   }
 

@@ -22,6 +22,8 @@ import { png, svg } from "./qr";
 import { sign, verify } from "./auth";
 import * as admin from "./admin";
 import { Store } from "./store";
+import * as assessment from "./assessment";
+import { forBrowser } from "./assessment-bank";
 import * as tickets from "./ticket";
 
 const PRIVATE = {
@@ -138,6 +140,13 @@ button.tick.on{color:#0d5c34;border-color:#1a7f4b}
 button.tick.on .box{background:#1a7f4b;border-color:#1a7f4b}
 .bar{height:7px;border-radius:99px;background:#e7ecf2;overflow:hidden;margin-top:8px}
 .bar span{display:block;height:100%;background:#1a7f4b}
+.q{padding:16px}
+.qn{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.qt{font-weight:600;margin:4px 0 12px;line-height:1.4}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;margin-bottom:7px;
+border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:14.5px;line-height:1.4}
+.opt input{width:auto;margin:2px 0 0;flex:none;accent-color:var(--brand)}
+.opt:has(input:checked){border-color:var(--brand);background:#f2f7fb}
 .arr{padding:10px 16px;border-top:1px solid var(--line)}
 .arr .who{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .arr .site{margin-top:2px;font-size:12.5px;word-break:break-all}
@@ -173,7 +182,67 @@ function eventLine(env: Env): string {
 
 // --- participant ------------------------------------------------------
 
-function ticketPage(t: Ticket, token: string, env: Env): Response {
+/**
+ * The pre-test, shown in place of the QR until it is done.
+ *
+ * A plain form POST, no JavaScript: this runs on whatever phone the
+ * participant owns, on venue wifi, and a form that submits without scripting
+ * is one less thing to fail in a queue.
+ *
+ * Unanswered questions are permitted — the form does not require every radio —
+ * because a participant stuck on question seven with the doors opening should
+ * be able to submit what they have rather than be trapped by their own page.
+ */
+function preTestPage(t: Ticket, token: string, env: Env, missing = false): Response {
+  const questions = forBrowser("pre")
+    .map(
+      (q, i) => `<div class="card q">
+        <div class="qn">Soal ${i + 1} dari 10</div>
+        <p class="qt">${esc(q.q)}</p>
+        ${Object.entries(q.o)
+          .map(
+            ([letter, text]) => `<label class="opt">
+              <input type="radio" name="${esc(q.id)}" value="${esc(letter)}">
+              <span><b>${esc(letter)}.</b> ${esc(text)}</span>
+            </label>`,
+          )
+          .join("")}
+      </div>`,
+    )
+    .join("");
+
+  return page(
+    `Pre-test — ${t.name}`,
+    `<div class="wrap">
+      <div class="card">
+        <h1>Halo, ${esc(t.name)}</h1>
+        ${eventLine(env)}
+        <p class="hint" style="margin-top:12px">Sebelum registrasi, mohon isi
+        pre-test singkat ini. Sepuluh soal pilihan ganda, sekitar tiga menit.
+        Setelah selesai, kode QR tiket Anda akan muncul di halaman ini.</p>
+      </div>
+      ${
+        missing
+          ? `<div class="res warn"><b>Belum lengkap</b>Masih ada soal yang belum
+             dijawab. Anda tetap boleh mengirim, tetapi soal kosong bernilai 0.</div>`
+          : ""
+      }
+      <form method="POST" action="/t/${esc(token)}">
+        ${questions}
+        <button type="submit">Kirim jawaban &amp; tampilkan tiket</button>
+        <p class="hint">Jawaban dikirim sekali. Setelah terkirim, nilai tidak
+        dapat diubah.</p>
+      </form>
+    </div>`,
+  );
+}
+
+function ticketPage(
+  t: Ticket,
+  token: string,
+  env: Env,
+  pre: assessment.Result | null = null,
+): Response {
   const url = `https://tiket.${env.DOMAIN}/t/${token}`;
   const already = t.checked_at
     ? `<div class="res ok"><b>Sudah check-in</b>${esc(wib(t.checked_at))} WIB</div>`
@@ -190,6 +259,12 @@ function ticketPage(t: Ticket, token: string, env: Env): Response {
         ${eventLine(env)}
         <div class="qr">${svg(url, 300)}</div>
         <p class="hint" style="text-align:center">Tunjukkan QR ini di meja registrasi.</p>
+        ${
+          pre
+            ? `<div class="res ok" style="margin-top:14px"><b>Pre-test selesai</b>
+               Nilai Anda ${pre.score} dari 100.</div>`
+            : ""
+        }
         <h2 style="margin-top:18px">Kode Anda</h2>
         <div class="code">${esc(t.manual_code)}</div>
         <p class="hint">Satu kode untuk dua hal: sebutkan di meja registrasi
@@ -387,9 +462,12 @@ const SCANNER_JS = String.raw`
         body: JSON.stringify(body),
       });
       var d = await r.json();
+      var pre = d.pre && d.pre.done
+        ? '<br><b style="color:#0d5c34">Pre-test: sudah, nilai ' + d.pre.score + '</b>'
+        : '<br><b style="color:#8c1d18">Pre-test: BELUM</b>';
       if (!r.ok) show('bad', d.title || 'Ditolak', esc(d.detail || ''));
-      else if (d.first) show('ok', 'Berhasil check-in', esc(d.name) + ' · ' + esc(d.at) + ' WIB');
-      else show('warn', 'Sudah hadir', esc(d.name) + ' · ' + esc(d.at) + ' WIB oleh ' + esc(d.by));
+      else if (d.first) show('ok', 'Berhasil check-in', esc(d.name) + ' · ' + esc(d.at) + ' WIB' + pre);
+      else show('warn', 'Sudah hadir', esc(d.name) + ' · ' + esc(d.at) + ' WIB oleh ' + esc(d.by) + pre);
     } catch (err) {
       // The server may or may not have saved. Never claim success.
       show('grey', 'Belum terkonfirmasi', 'Periksa koneksi lalu scan ulang.');
@@ -421,6 +499,7 @@ function boardPage(
   c: tickets.Counts,
   who: tickets.Attended[],
   sites: Map<string, { slug: string | null; built: boolean }>,
+  pre: Map<string, assessment.Result>,
   domain: string,
 ): Response {
   const list = who.length
@@ -430,7 +509,12 @@ function boardPage(
           const host = site?.slug ? `${site.slug}.${domain}` : null;
           return `<div class="arr">
             <div class="who"><b>${esc(a.name)}</b>
-              <span class="meta">${esc(wib(a.at))} &middot; ${esc(a.by)}</span></div>
+              <span class="meta">${esc(wib(a.at))} &middot; ${esc(a.by)}</span>
+              ${
+                pre.has(a.code)
+                  ? `<span class="tag ok">pre-test ${pre.get(a.code)!.score}</span>`
+                  : `<span class="tag bad">belum melakukan test</span>`
+              }</div>
             <div class="site">${
               host
                 ? `<a href="https://${esc(host)}" target="_blank" rel="noopener">${esc(host)}</a>${
@@ -500,13 +584,31 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   if (t) {
     const token = t[1]!;
     const ticket = await tickets.byToken(env, token);
+
+    // Submitting the pre-test. POST rather than GET, so a WhatsApp link
+    // preview cannot record an empty attempt on somebody's behalf.
+    if (ticket && ticket.status === "active" && req.method === "POST") {
+      const form = await req.formData();
+      const answers: Record<string, string> = {};
+      for (const q of forBrowser("pre")) {
+        const a = String(form.get(q.id) ?? "").trim();
+        if (a) answers[q.id] = a;
+      }
+      const result = await assessment.submit(env, "pre", ticket.manual_code, answers);
+      return ticketPage(ticket, token, env, result);
+    }
+
     if (!ticket || ticket.status !== "active") {
       return page("Tiket tidak berlaku", `<div class="wrap"><div class="card">
         <h1>Tiket tidak berlaku</h1>
         <p class="meta">Tiket ini dibatalkan atau tidak dikenali.
         Silakan hubungi panitia di meja bantuan.</p></div></div>`);
     }
-    return ticketPage(ticket, token, env);
+    // The QR waits behind the pre-test. Not a gate — their printed code still
+    // works at the desk, and nothing in the system refuses them — but it makes
+    // the test the path of least resistance rather than an optional detour.
+    const pre = await assessment.get(env, "pre", ticket.manual_code);
+    return pre ? ticketPage(ticket, token, env, pre) : preTestPage(ticket, token, env);
   }
 
   // QR as a raster, for the Google Sheets distribution template. Revocation is
@@ -603,12 +705,13 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     }
 
     if (path === "/papan") {
-      const [counts, arrivals, sites] = await Promise.all([
+      const [counts, arrivals, sites, pre] = await Promise.all([
         tickets.counts(env),
         tickets.attended(env),
         new Store(env.DB).siteIndex(),
+        assessment.all(env, "pre"),
       ]);
-      return boardPage(counts, arrivals, sites, env.DOMAIN);
+      return boardPage(counts, arrivals, sites, pre, env.DOMAIN);
     }
 
     if (path === "/api/checkin" && req.method === "POST") {
@@ -625,11 +728,13 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       }
 
       const result = await tickets.checkIn(env, ticket.ticket_id, who);
+      const pre = await assessment.get(env, "pre", ticket.manual_code);
       return json({
         ...result,
         at: wib(result.at),
         name: ticket.name,
         code: ticket.manual_code,
+        pre: pre ? { done: true, score: pre.score } : { done: false },
       });
     }
     return json({ title: "Tidak ditemukan" }, 404);
