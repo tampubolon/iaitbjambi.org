@@ -290,13 +290,15 @@ export function listPage(
 export function pesanPeserta(nama: string, tiket: string, kode: string, site: string): string {
   return `Halo ${nama},
 
-Selamat! Anda terdaftar sebagai peserta AIMPACT - AI untuk UMKM.
-Rabu, 17 September 2026 - Kota Jambi.
+Selamat! Anda terdaftar sebagai peserta AIMPACT - AI untuk UMKM yang dilaksanakan pada:
+\u{1F4C6} : Kamis, 17 September 2026
+\u{1F4CD} : Aula Griya Mayang Rumah Dinas Walikota Jambi https://maps.app.goo.gl/GBCFe1FW6XhZSmNW9
+\u{23F0} : 08.00 - Selesai
 
 TIKET ANDA
 ${tiket}
 
-Buka link di atas, lalu SIMPAN gambar QR ke galeri HP Anda. Tunjukkan QR tersebut di meja registrasi. Dengan menyimpannya, Anda tidak perlu sinyal saat mengantre.
+Buka link di atas, lalu isi Pre-test dan anda akan mendapatkan ticket anda. SIMPAN gambar QR ke galeri HP Anda. Tunjukkan QR tersebut di meja registrasi. Dengan menyimpannya, Anda tidak perlu sinyal saat mengantre.
 
 KODE ANDA: ${kode}
 
@@ -310,6 +312,8 @@ Masukkan kode yang sama, lalu ceritakan usaha Anda. Website Anda akan hidup di:
 ${site}
 
 Mohon diperhatikan: website baru bisa dibuat SETELAH Anda registrasi di meja panitia.
+
+Setelah sesi selesai lakukan pengisian post test. Sebelum anda meninggalkan seminar.
 
 Tiket ini hanya untuk Anda dan tidak dapat dipindahtangankan.
 Sampai jumpa di AImpact!`;
