@@ -126,3 +126,51 @@ export async function all(env: Env, kind: Kind): Promise<Map<string, Result>> {
   }
   return out;
 }
+
+/**
+ * Whether the post-test is open.
+ *
+ * Closed until a panitia member opens it, because a post-test available from
+ * the start gets sat during the seminar — or before the pre-test — and the
+ * difference between the two scores is the only thing that makes either
+ * number interesting.
+ */
+export async function postOpen(env: Env): Promise<boolean> {
+  try {
+    const rows = (await rest(env, "settings?key=eq.post_open&select=value")) as
+      | { value: string }[]
+      | null;
+    return rows?.[0]?.value === "true";
+  } catch {
+    // Unreachable settings means closed: opening by accident is worse than
+    // staying shut while somebody checks.
+    return false;
+  }
+}
+
+/** Opens or closes the post-test, recording who and why. */
+export async function setPostOpen(
+  env: Env,
+  open: boolean,
+  actor: string,
+  reason: string,
+): Promise<void> {
+  await rest(env, "settings", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates" },
+    body: JSON.stringify({
+      key: "post_open",
+      value: open ? "true" : "false",
+      updated_by: actor,
+    }),
+  });
+  await rest(env, "audit_logs", {
+    method: "POST",
+    body: JSON.stringify({
+      actor,
+      action: open ? "post_test_open" : "post_test_close",
+      reason,
+      detail: open ? "post-test dibuka" : "post-test ditutup",
+    }),
+  });
+}

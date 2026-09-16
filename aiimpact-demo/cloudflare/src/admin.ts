@@ -120,6 +120,40 @@ function labOpenBanner(c: Ctx): string {
  * needs while searching for a participant — so it does not sit above the
  * search box being used every thirty seconds.
  */
+/**
+ * Opens or closes the post-test.
+ *
+ * Loud while open, like the lab override, for the same reason: the risk is not
+ * flipping it when the session ends, it is nobody noticing it stayed open
+ * afterwards — or, worse, that it was open all along and people sat it before
+ * the material.
+ */
+function postTestControl(c: Ctx, open: boolean): string {
+  return open
+    ? `<div class="card" style="border:2px solid #1a7f4b;background:#eef8f2">
+        <div class="nm" style="color:#0d5c34">Post-test dibuka</div>
+        <p class="meta">Peserta dapat mengisi post-test di
+        tiket.iaitbjambi.org/post. Tutup setelah sesi benar-benar selesai.</p>
+        <form method="POST" action="/admin/post-test" class="act">
+          <input type="hidden" name="open" value="0">
+          <input name="reason" placeholder="Alasan menutup" required
+                 style="text-transform:none;letter-spacing:0;font-size:14px;text-align:left">
+          <button type="submit">Tutup post-test</button>
+        </form>
+      </div>`
+    : `<div class="card">
+        <h2>Post-test</h2>
+        <p class="meta">Masih tertutup. Buka setelah sesi materi selesai, lalu
+        umumkan alamat <b>tiket.iaitbjambi.org/post</b> kepada peserta.</p>
+        <form method="POST" action="/admin/post-test" class="act">
+          <input type="hidden" name="open" value="1">
+          <input name="reason" placeholder="Alasan membuka" required
+                 style="text-transform:none;letter-spacing:0;font-size:14px;text-align:left">
+          <button type="submit">Buka post-test</button>
+        </form>
+      </div>`;
+}
+
 function labOpenControl(c: Ctx): string {
   return `<div class="card">
         <h2>Akses lab</h2>
@@ -142,6 +176,7 @@ export function dashboard(
   results: tickets.Found[],
   notice = "",
   labIsOpen = false,
+  postIsOpen = false,
 ): Response {
   const list = query
     ? results.length
@@ -163,6 +198,7 @@ export function dashboard(
       </div>
       ${notice}
       ${labIsOpen ? labOpenBanner(c) : ""}
+      ${postIsOpen ? postTestControl(c, true) : ""}
       <div class="card">
         <h2>Cari peserta</h2>
         <form method="GET" action="/admin">
@@ -178,6 +214,7 @@ export function dashboard(
       <a class="btn ghost" href="/admin/log">Riwayat tindakan admin</a>
       <a class="btn ghost" href="/scan">Buka scanner</a>
       <form method="POST" action="/admin/keluar"><button class="ghost" type="submit">Keluar</button></form>
+      ${postIsOpen ? "" : postTestControl(c, false)}
       ${labIsOpen ? "" : labOpenControl(c)}
     </div>`,
   );
@@ -198,6 +235,7 @@ export function listPage(
   panitia: Set<string>,
   tokens: Map<string, string>,
   pre: Map<string, assessment.Result>,
+  post: Map<string, assessment.Result>,
   filter: string,
   domain: string,
   /**
@@ -222,6 +260,7 @@ export function listPage(
     : filter === "jadi" ? sites.get(t.manual_code)?.built
     : filter === "panitia" ? panitia.has(t.manual_code)
     : filter === "belumtest" ? !pre.has(t.manual_code)
+    : filter === "belumpost" ? !post.has(t.manual_code)
     : true;
 
   const shown = rows.filter(want);
@@ -273,6 +312,17 @@ export function listPage(
             ? `<span class="tag ok">${pre.get(t.manual_code)!.score}</span>`
             : `<span class="tag bad">belum melakukan test</span>`
         }</td>
+        <td class="st">${(() => {
+          const a = pre.get(t.manual_code);
+          const b = post.get(t.manual_code);
+          if (!b) return `<span class="tag bad">belum melakukan test</span>`;
+          const d = a ? b.score - a.score : null;
+          const move =
+            d === null ? "" : d > 0 ? ` <span class="tag ok">+${d}</span>`
+            : d < 0 ? ` <span class="tag bad">${d}</span>`
+            : ` <span class="tag">0</span>`;
+          return `<span class="tag ok">${b.score}</span>${move}`;
+        })()}</td>
       </tr>`;
     })
     .join("");
@@ -289,7 +339,8 @@ export function listPage(
           ${tab("belum", `Belum (${rows.filter((t) => !t.checked_at).length})`)}
           ${tab("jadi", `Website jadi (${rows.filter((t) => sites.get(t.manual_code)?.built).length})`)}
           ${tab("panitia", `Panitia (${rows.filter((t) => panitia.has(t.manual_code)).length})`)}
-          ${tab("belumtest", `Belum test (${rows.filter((t) => !pre.has(t.manual_code)).length})`)}
+          ${tab("belumtest", `Belum pre-test (${rows.filter((t) => !pre.has(t.manual_code)).length})`)}
+          ${tab("belumpost", `Belum post-test (${rows.filter((t) => !post.has(t.manual_code)).length})`)}
         </div>
       </div>
       <div class="card plist">
@@ -299,7 +350,7 @@ export function listPage(
                  <thead><tr><th class="num">#</th><th>Nama</th>
                  ${secrets ? "<th>Kode</th><th>Link tiket</th>" : ""}
                  <th>Website</th><th>Status</th>
-                 <th>Pre-test</th></tr></thead>
+                 <th>Pre-test</th><th>Post-test</th></tr></thead>
                  <tbody>${body}</tbody>
                </table>`
             : '<p class="meta" style="padding:14px 16px">Tidak ada.</p>'
@@ -552,14 +603,15 @@ export async function handle(
   }
 
   if (path === "/admin/peserta") {
-    const [rows, sites, panitia, tokens, pre] = await Promise.all([
+    const [rows, sites, panitia, tokens, pre, post] = await Promise.all([
       tickets.all(env, true),
       new Store(env.DB).siteIndex(),
       tickets.panitiaCodes(env),
       tickets.ticketTokens(env),
       assessment.all(env, "pre"),
+      assessment.all(env, "post"),
     ]);
-    return listPage(c, rows, sites, panitia, tokens, pre,
+    return listPage(c, rows, sites, panitia, tokens, pre, post,
       url.searchParams.get("f") ?? "semua", env.DOMAIN);
   }
 
@@ -578,6 +630,10 @@ export async function handle(
       } else if (path === "/admin/undo") {
         await tickets.undoCheckIn(env, id, who, reason);
         notice = "Check-in dibatalkan.";
+      } else if (path === "/admin/post-test") {
+        const open = String(form.get("open") ?? "") === "1";
+        await assessment.setPostOpen(env, open, who, reason);
+        notice = open ? "Post-test dibuka." : "Post-test ditutup.";
       } else if (path === "/admin/lab") {
         const open = String(form.get("open") ?? "") === "1";
         await tickets.setLabOpen(env, open, who, reason);
@@ -619,10 +675,11 @@ export async function handle(
         message,
       )}</b></div>`
     : "";
-  const [counts, labIsOpen, results] = await Promise.all([
+  const [counts, labIsOpen, postIsOpen, results] = await Promise.all([
     tickets.counts(env),
     tickets.labOpen(env),
+    assessment.postOpen(env),
     query ? tickets.search(env, query) : Promise.resolve([]),
   ]);
-  return dashboard(c, who, counts, query, results, notice, labIsOpen);
+  return dashboard(c, who, counts, query, results, notice, labIsOpen, postIsOpen);
 }

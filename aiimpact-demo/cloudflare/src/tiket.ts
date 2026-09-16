@@ -283,6 +283,126 @@ function ticketPage(
   );
 }
 
+/**
+ * The post-test at /post.
+ *
+ * A short address because it is announced from a stage and read off a slide at
+ * the end of a session; nobody scrolls back through WhatsApp for a ticket link
+ * at that point. The six-character code identifies the participant — it is on
+ * the paper slip in their hand and in their original message.
+ *
+ * Check-in is deliberately not required. Someone the desk missed still gets
+ * measured, which matches the decision taken everywhere else here: staff
+ * judgement, not gates.
+ */
+function postPage(
+  env: Env,
+  opts: {
+    code?: string;
+    ticket?: Ticket | null;
+    pre?: assessment.Result | null;
+    post?: assessment.Result | null;
+    open: boolean;
+    error?: string;
+  },
+): Response {
+  const { code = "", ticket, pre, post, open, error } = opts;
+
+  if (!open && !post) {
+    return page(
+      "Post-test",
+      `<div class="wrap"><div class="card">
+        <h1>Post-test belum dibuka</h1>
+        <p class="meta">Silakan tunggu arahan panitia. Halaman ini akan aktif
+        setelah sesi materi selesai.</p>
+      </div></div>`,
+    );
+  }
+
+  // Already sat it: show both scores and what changed between them.
+  if (post && ticket) {
+    const delta = pre ? post.score - pre.score : null;
+    return page(
+      "Post-test selesai",
+      `<div class="wrap">
+        <div class="card">
+          <h1>Terima kasih, ${esc(ticket.name)}</h1>
+          <div class="res ok" style="margin-top:12px"><b>Post-test selesai</b>
+            Nilai Anda ${post.score} dari 100.</div>
+          ${
+            pre
+              ? `<p class="meta">Pre-test Anda ${pre.score}, post-test ${post.score}.
+                 ${
+                   delta! > 0
+                     ? `Naik ${delta} poin.`
+                     : delta! < 0
+                       ? `Turun ${-delta!} poin.`
+                       : "Tidak berubah."
+                 }</p>`
+              : `<p class="meta">Anda tidak mengerjakan pre-test, jadi perubahan
+                 nilai tidak dapat dihitung.</p>`
+          }
+          <p class="hint">Jawaban sudah tersimpan. Terima kasih sudah mengikuti
+          AIMPACT.</p>
+        </div>
+      </div>`,
+    );
+  }
+
+  // Known code: show the questions.
+  if (ticket) {
+    const questions = forBrowser("post")
+      .map(
+        (q, i) => `<div class="card q">
+          <div class="qn">Soal ${i + 1} dari 10</div>
+          <p class="qt">${esc(q.q)}</p>
+          ${Object.entries(q.o)
+            .map(
+              ([letter, text]) => `<label class="opt">
+                <input type="radio" name="${esc(q.id)}" value="${esc(letter)}">
+                <span><b>${esc(letter)}.</b> ${esc(text)}</span>
+              </label>`,
+            )
+            .join("")}
+        </div>`,
+      )
+      .join("");
+
+    return page(
+      `Post-test — ${ticket.name}`,
+      `<div class="wrap">
+        <div class="card">
+          <h1>Halo, ${esc(ticket.name)}</h1>
+          <p class="meta">Post-test AIMPACT. Sepuluh soal, sekitar tiga menit.</p>
+        </div>
+        <form method="POST" action="/post">
+          <input type="hidden" name="kode" value="${esc(ticket.manual_code)}">
+          ${questions}
+          <button type="submit">Kirim jawaban</button>
+          <p class="hint">Jawaban dikirim sekali. Setelah terkirim, nilai tidak
+          dapat diubah.</p>
+        </form>
+      </div>`,
+    );
+  }
+
+  // No code yet, or an unknown one.
+  return page(
+    "Post-test",
+    `<div class="wrap"><div class="card">
+      <h1>Post-test AIMPACT</h1>
+      <p class="meta">Masukkan kode peserta Anda. Kode ada di kertas tiket dan
+      di pesan WhatsApp Anda.</p>
+      ${error ? `<div class="res bad"><b>Gagal</b>${esc(error)}</div>` : ""}
+      <form method="POST" action="/post">
+        <input name="kode" maxlength="12" placeholder="KODE" required
+               autocomplete="off" value="${esc(code)}" style="margin-top:12px">
+        <button type="submit">Lanjut</button>
+      </form>
+    </div></div>`,
+  );
+}
+
 // --- staff ------------------------------------------------------------
 
 const STAFF_COOKIE = "petugas";
@@ -521,6 +641,49 @@ export async function handle(req: Request, env: Env): Promise<Response> {
     if (handled) return handled;
   }
 
+  // Post-test. Public like a ticket page: the code is the credential, and
+  // requiring a staff session would put a volunteer between two hundred people
+  // and a three-minute form at the moment everyone is leaving.
+  if (path === "/post") {
+    const open = await assessment.postOpen(env);
+
+    if (req.method === "POST") {
+      const form = await req.formData();
+      const code = String(form.get("kode") ?? "");
+      const ticket = await tickets.byManualCode(env, code);
+
+      if (!ticket || ticket.status !== "active") {
+        return postPage(env, {
+          code,
+          open,
+          error: "Kode tidak dikenali. Periksa kembali kertas tiket Anda.",
+        });
+      }
+
+      // Answers present means this is the submission, not the code entry.
+      const answers: Record<string, string> = {};
+      for (const q of forBrowser("post")) {
+        const a = String(form.get(q.id) ?? "").trim();
+        if (a) answers[q.id] = a;
+      }
+      const already = await assessment.get(env, "post", ticket.manual_code);
+
+      if (already || Object.keys(answers).length > 0) {
+        if (!open && !already) {
+          return postPage(env, { open, ticket: null });
+        }
+        const result =
+          already ?? (await assessment.submit(env, "post", ticket.manual_code, answers));
+        const pre = await assessment.get(env, "pre", ticket.manual_code);
+        return postPage(env, { open, ticket, pre, post: result });
+      }
+
+      return postPage(env, { open, ticket });
+    }
+
+    return postPage(env, { open });
+  }
+
   // Ticket, by token. GET only and side-effect free: opening a ticket link,
   // or WhatsApp fetching a preview of it, must never admit anyone.
   const t = /^\/t\/([0-9A-HJKMNP-TV-Z]{26})\/?$/.exec(path);
@@ -659,12 +822,13 @@ export async function handle(req: Request, env: Env): Promise<Response> {
         page,
         cookie: (e: Env, n: string) => sessionCookie(e, "admin", n),
       };
-      const [counts, rows, sites, panitia, pre] = await Promise.all([
+      const [counts, rows, sites, panitia, pre, post] = await Promise.all([
         tickets.counts(env),
         tickets.all(env, true),
         new Store(env.DB).siteIndex(),
         tickets.panitiaCodes(env),
         assessment.all(env, "pre"),
+        assessment.all(env, "post"),
       ]);
       const counters = `<div class="row">
         <div><div class="big">${counts.attended}</div><div class="meta">Hadir</div></div>
@@ -673,7 +837,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
       </div>
       ${counts.revoked ? `<p class="hint">${counts.revoked} tiket dibatalkan.</p>` : ""}`;
       return admin.listPage(
-        ctx, rows, sites, panitia, new Map(), pre,
+        ctx, rows, sites, panitia, new Map(), pre, post,
         url.searchParams.get("f") ?? "semua", env.DOMAIN,
         "/papan", false, counters,
       );
