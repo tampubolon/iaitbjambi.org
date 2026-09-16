@@ -69,7 +69,8 @@ function page(title: string, body: string, extraHead = ""): Response {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <title>${esc(title)}</title><style>${CSS}</style>${extraHead}</head><body>${body}
-<footer class="cr">Developed by IA ITB Pengda Jambi</footer></body></html>`,
+<footer class="cr">Developed by IA ITB Pengda Jambi
+<div class="dev">Developer: Martinus Tampubolon &middot; <a href="https://www.linkedin.com/in/martinust/" target="_blank" rel="noopener">LinkedIn</a> &middot; <a href="https://github.com/tampubolon" target="_blank" rel="noopener">GitHub</a></div></footer></body></html>`,
     { headers: PRIVATE },
   );
 }
@@ -168,6 +169,8 @@ td.code{font:700 12.5px ui-monospace,monospace;letter-spacing:.06em;color:var(--
 td.link a{color:var(--muted);font-size:11px;line-height:1.35}
 td.st .tag{display:inline-block;margin:0 3px 3px 0;font-size:11px;padding:2px 7px}
 footer.cr{text-align:center;color:var(--muted);font-size:12px;padding:18px 16px 26px}
+footer.cr .dev{text-align:right;margin-top:8px}
+footer.cr .dev a{color:var(--brand)}
 .row{display:flex;gap:10px}.row>div{flex:1;text-align:center;
 background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 8px}
 `;
