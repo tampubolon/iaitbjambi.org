@@ -24,6 +24,7 @@ Indonesia, is [`docs/Panduan-Registrasi-AIMPACT-2026.pdf`](docs/Panduan-Registra
 | `tiket.iaitbjambi.org/papan` | Attendance board: who is in, websites, pre/post scores. No codes or ticket links | Panitia |
 | `tiket.iaitbjambi.org/kirim` | WhatsApp send list with a shared "sent" checklist | Panitia |
 | `tiket.iaitbjambi.org/admin` | Search, cancel/restore tickets, undo check-in, admit manually, lab and post-test switches, audit log, attendance CSV | Admin |
+| `tiket.iaitbjambi.org/admin/statistik` | Event statistics: attendance, funnel, pre/post-test results per question, websites and prompts | Admin |
 | `aimpact.iaitbjambi.org` | The builder: enter code, write the prompt, get a page | Participant |
 | `{slug}.iaitbjambi.org` | A participant's published page | Anyone |
 
@@ -106,7 +107,8 @@ flowchart LR
 ```
 
 - The browser submits and then polls; the page is live when the job is done.
-- Each participant can generate **15 times**. A failed attempt does not count.
+- Each participant can generate **15 times**. A slot is taken when the prompt is
+  submitted and is not returned if the build fails.
 - The model writes a full HTML page. `src/sanitize.ts` removes scripts, frames,
   forms and event handlers, and the page is served with `script-src 'none'`
   as a backstop.
@@ -121,7 +123,8 @@ flowchart LR
 2. Participants go to `tiket.iaitbjambi.org/post` and sign in with their code.
 3. Scores appear next to the pre-test on `/papan` and `/admin/peserta`
    (for example `90 +30`).
-4. `/admin/hadir.csv` exports attendance.
+4. `/admin/hadir.csv` exports attendance, and `/admin/statistik` shows the event's
+   results for the organisers' report.
 
 ## When something goes wrong
 
@@ -129,7 +132,7 @@ flowchart LR
 |---|---|
 | Scanner or camera fails | Type the code on `/scan`. If check-in itself is down, an admin turns on **Buka lab untuk semua** at the bottom of `/admin`: the builder accepts any valid code without check-in. A banner shows while it is on. |
 | Anthropic credit runs out | Every request falls back to DeepSeek automatically. Participants see no error. Verified with all 206 accounts. |
-| Anthropic and DeepSeek both unavailable | After retries the participant sees *"Gagal membuat halaman… Silakan coba lagi."* The attempt is not counted against their 15. Top up either account. |
+| Anthropic and DeepSeek both unavailable | After retries the participant sees *"Gagal membuat halaman… Silakan coba lagi."* The attempt still uses one of their 15 slots. Top up either account. |
 | Wrong person admitted | Admin: **undo check-in** on `/admin`. |
 | Participant replaced or cancelled | Admin cancels the ticket (the old link and code stop working, and the person drops off every list) and issues a new one. A cancelled ticket can be restored from `/admin` search. |
 | Participant lost the ticket link | Admin finds them on `/admin/peserta`, which shows the ticket link and code. |
