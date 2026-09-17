@@ -59,6 +59,42 @@ export class Store {
   }
 
   /**
+   * Every lab account's usage and every job, for the statistics page.
+   *
+   * Two reads in one batch rather than aggregates in SQL: the figures have to
+   * leave out panitia and cancelled tickets, and that list lives in Supabase.
+   */
+  async usage(): Promise<{
+    lab: { code: string; redeemed: boolean; generations: number; built: boolean }[];
+    jobs: { code: string; status: string; createdAt: string }[];
+  }> {
+    const [lab, jobs] = await this.db.batch([
+      this.db.prepare(
+        `SELECT p.code, p.redeemed_at, p.generation_count,
+                (SELECT 1 FROM pages g WHERE g.slug = p.slug) AS built
+           FROM participants p`,
+      ),
+      this.db.prepare("SELECT code, status, created_at FROM jobs"),
+    ]);
+    return {
+      lab: ((lab?.results ?? []) as {
+        code: string;
+        redeemed_at: string | null;
+        generation_count: number | null;
+        built: number | null;
+      }[]).map((r) => ({
+        code: r.code,
+        redeemed: Boolean(r.redeemed_at),
+        generations: r.generation_count ?? 0,
+        built: Boolean(r.built),
+      })),
+      jobs: ((jobs?.results ?? []) as { code: string; status: string; created_at: string }[]).map(
+        (r) => ({ code: r.code, status: r.status, createdAt: r.created_at }),
+      ),
+    };
+  }
+
+  /**
    * Marks a code first used and returns the participant.
    *
    * Idempotent by design: a participant who reloads, loses signal mid-request,

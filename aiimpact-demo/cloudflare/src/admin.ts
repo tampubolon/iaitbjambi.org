@@ -17,6 +17,8 @@ import type { Env } from "./model";
 import * as assessment from "./assessment";
 import { Store } from "./store";
 import * as tickets from "./ticket";
+import { compute } from "./stats";
+import { statsPage } from "./stats-page";
 
 /** Renders a value for a CSV cell, quoting and escaping as needed. */
 function csvCell(value: unknown): string {
@@ -209,6 +211,7 @@ export function dashboard(
       </div>
       ${list}
       <a class="btn ghost" href="/admin/kirim">Kirim pesan WhatsApp ke peserta</a>
+      <a class="btn ghost" href="/admin/statistik">Statistik acara</a>
       <a class="btn ghost" href="/admin/peserta">Daftar peserta &amp; website</a>
       <a class="btn ghost" href="/admin/hadir.csv">Unduh daftar hadir (CSV)</a>
       <a class="btn ghost" href="/admin/log">Riwayat tindakan admin</a>
@@ -589,6 +592,26 @@ export async function handle(
   }
 
   if (path === "/admin/log") return auditPage(c, await tickets.audit(env));
+
+  if (path === "/admin/statistik") {
+    const [rows, panitia, pre, post, usage] = await Promise.all([
+      tickets.all(env, true),
+      tickets.panitiaCodes(env),
+      assessment.all(env, "pre"),
+      assessment.all(env, "post"),
+      new Store(env.DB).usage(),
+    ]);
+    const stats = compute({
+      tickets: rows.map((r) => ({ code: r.manual_code, status: r.status, checkedAt: r.checked_at })),
+      panitia,
+      pre,
+      post,
+      lab: usage.lab,
+      jobs: usage.jobs,
+      maxGenerations: Number(env.MAX_GENERATIONS) || 15,
+    });
+    return statsPage(c, stats, c.wib(new Date().toISOString()));
+  }
 
   if (path === "/admin/kirim") {
     if (req.method === "POST") {
